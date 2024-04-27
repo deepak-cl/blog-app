@@ -34,4 +34,11 @@ public class Post {
 
     @OneToMany(mappedBy = "post", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<Comment> comments = new HashSet<>();
+
+    // FetchType.LAZY category object won't load on demain when post jpa entity
+    // is called. We can get this category object on demand by calling getter
+    // Category method
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "category_id")
+    private Category category;
 }
