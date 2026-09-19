@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import httpx
 
 from app.config import CACHE_TTL, DEFAULT_WEATHER_LOCATION, WEATHER_API_URL

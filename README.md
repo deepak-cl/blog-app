@@ -2,7 +2,7 @@
 
 > **Fetch · Cache · Analyze** — A personal data hub that pulls trivia, ISS location, and weather from public APIs, caches everything in SQLite, and serves custom analytics endpoints.
 
-![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)
 ![Bruno](https://img.shields.io/badge/Bruno-Collection-F97316)
@@ -41,7 +41,7 @@ flowchart LR
 
 | Requirement | Notes |
 |-------------|-------|
-| Python 3.10+ | Check with `python3 --version` |
+| Python 3.9+ | Check with `python3 --version` |
 | pip | Bundled with Python |
 | Internet | Required for live API calls |
 | Git | To clone the repo |

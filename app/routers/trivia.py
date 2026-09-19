@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException
 
 from app.services.trivia_service import TriviaService

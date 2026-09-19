@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import httpx
 
 from app.config import CACHE_TTL, ISS_API_URL

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import httpx
 
 from app.config import CACHE_TTL, TRIVIA_API_URL
