@@ -1,0 +1,11 @@
+meta {
+  name: Get Weather (Force Refresh)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/weather?refresh=true
+  body: none
+  auth: inherit
+}

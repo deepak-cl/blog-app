@@ -67,6 +67,14 @@ personal-api-hub/
 └── README.md
 ```
 
+## Bruno Collection
+
+A ready-made [Bruno](https://www.usebruno.com/) collection lives at `bruno/Personal API Hub/`.
+
+1. Install Bruno and open the collection folder.
+2. Select the **Local** environment (`baseUrl` = `http://localhost:8000`).
+3. Run requests from the Health, Trivia, ISS, Weather, and Analytics folders.
+
 ## Testing
 
 ```bash

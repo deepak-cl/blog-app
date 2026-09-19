@@ -1,0 +1,11 @@
+meta {
+  name: Get ISS (Force Refresh)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/iss?refresh=true
+  body: none
+  auth: inherit
+}
