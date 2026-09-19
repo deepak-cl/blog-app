@@ -99,6 +99,8 @@ curl http://localhost:8000/analytics/summary
 
 The SQLite database is created automatically at `data/hub.db` on first run.
 
+> **No manual DB setup required.** The app creates `data/hub.db` and tables on startup. If you see database errors, stop the server and run `rm -f data/hub.db`, then restart.
+
 ---
 
 ## How Caching Works

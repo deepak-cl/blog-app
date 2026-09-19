@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -8,14 +9,18 @@ from typing import Any
 
 from app.config import DATABASE_PATH
 
+logger = logging.getLogger(__name__)
+_db_initialized = False
+
 
 def _ensure_data_dir() -> None:
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def init_db() -> None:
+    global _db_initialized
     _ensure_data_dir()
-    with get_connection() as conn:
+    with get_connection(skip_init=True) as conn:
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS cache_entries (
@@ -40,10 +45,16 @@ def init_db() -> None:
                 ON iss_positions(fetched_at DESC);
             """
         )
+    _db_initialized = True
+    logger.info("SQLite ready at %s", DATABASE_PATH)
 
 
 @contextmanager
-def get_connection():
+def get_connection(*, skip_init: bool = False):
+    global _db_initialized
+    if not skip_init and not _db_initialized:
+        init_db()
+
     _ensure_data_dir()
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
@@ -164,26 +175,32 @@ def get_iss_position_history(
 
 
 def get_cache_stats(conn: sqlite3.Connection) -> dict[str, Any]:
-    rows = conn.execute(
-        """
-        SELECT source,
-               COUNT(*) AS entry_count,
-               MAX(fetched_at) AS last_fetched
-        FROM cache_entries
-        GROUP BY source
-        """
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            """
+            SELECT source,
+                   COUNT(*) AS entry_count,
+                   MAX(fetched_at) AS last_fetched
+            FROM cache_entries
+            GROUP BY source
+            """
+        ).fetchall()
 
-    iss_count = conn.execute("SELECT COUNT(*) AS count FROM iss_positions").fetchone()
+        iss_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM iss_positions"
+        ).fetchone()
+    except sqlite3.OperationalError as exc:
+        logger.warning("Cache stats unavailable: %s", exc)
+        return {"sources": [], "iss_position_samples": 0}
 
     return {
         "sources": [
             {
                 "source": row["source"],
-                "entry_count": row["entry_count"],
+                "entry_count": int(row["entry_count"]),
                 "last_fetched": row["last_fetched"],
             }
             for row in rows
         ],
-        "iss_position_samples": iss_count["count"] if iss_count else 0,
+        "iss_position_samples": int(iss_count["count"]) if iss_count else 0,
     }

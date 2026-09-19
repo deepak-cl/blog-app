@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 import httpx
@@ -9,11 +10,19 @@ from fastapi.responses import JSONResponse
 from app.db.database import init_db
 from app.routers import analytics, health, iss, trivia, weather
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+logger = logging.getLogger("personal_api_hub")
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    logger.info("Starting Personal API Hub")
     init_db()
     yield
+    logger.info("Stopping Personal API Hub")
 
 
 app = FastAPI(
@@ -40,6 +49,19 @@ async def value_error_handler(_: Request, exc: ValueError):
     return JSONResponse(
         status_code=502,
         content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled error on %s", request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": str(exc),
+            "path": str(request.url.path),
+            "hint": "Check the server terminal for a full traceback.",
+        },
     )
 
 app.include_router(health.router)
