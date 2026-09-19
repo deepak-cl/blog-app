@@ -24,6 +24,9 @@ Personal API Hub is a **FastAPI + SQLite** service that acts as your own mini da
 
 No API keys required. All upstream services are free and public.
 
+> **AI / developer lookup:** See [docs/PROJECT.md](docs/PROJECT.md) for architecture, extension guide, and changelog. Update it when adding features.
+
+
 ```mermaid
 flowchart LR
     Client --> Hub[Personal API Hub]
