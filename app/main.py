@@ -13,7 +13,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="Personal API & Data Hub",
+    title="Personal API Hub",
     description=(
         "Aggregates trivia, ISS location, and weather from external APIs "
         "with SQLite caching and custom analytics."
@@ -32,7 +32,7 @@ app.include_router(analytics.router)
 @app.get("/")
 def root():
     return {
-        "name": "Personal API & Data Hub",
+        "name": "Personal API Hub",
         "docs": "/docs",
         "endpoints": {
             "health": "/health",
