@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from app.db.database import init_db
 from app.routers import analytics, health, iss, trivia, weather
@@ -23,6 +25,22 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(httpx.HTTPError)
+async def upstream_http_error_handler(_: Request, exc: httpx.HTTPError):
+    return JSONResponse(
+        status_code=502,
+        content={"detail": f"Upstream API request failed: {exc}"},
+    )
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(_: Request, exc: ValueError):
+    return JSONResponse(
+        status_code=502,
+        content={"detail": str(exc)},
+    )
 
 app.include_router(health.router)
 app.include_router(trivia.router)

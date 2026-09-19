@@ -39,8 +39,10 @@ class ISSService:
                     "from_cache": True,
                 }
 
-            data = await self.fetch_remote()
-            fetched_at = utc_now_iso()
+        data = await self.fetch_remote()
+        fetched_at = utc_now_iso()
+
+        with get_connection() as conn:
             save_iss_position(conn, data["latitude"], data["longitude"], fetched_at)
             result = save_cache_entry(conn, self.source, data, CACHE_TTL[self.source])
             result["fetched_at"] = fetched_at

@@ -48,7 +48,9 @@ class TriviaService:
                     "from_cache": True,
                 }
 
-            data = await self.fetch_remote()
+        data = await self.fetch_remote()
+
+        with get_connection() as conn:
             return save_cache_entry(conn, self.source, data, CACHE_TTL[self.source])
 
     def get_cached(self) -> dict | None:

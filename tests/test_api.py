@@ -14,7 +14,7 @@ import app.config as config
 
 config.DATABASE_PATH = TEST_DB
 
-from app.db.database import init_db  # noqa: E402
+from app.db.database import init_db, is_cache_valid  # noqa: E402
 from app.main import app  # noqa: E402
 
 
@@ -42,6 +42,11 @@ async def test_health(client):
     body = response.json()
     assert body["status"] == "healthy"
     assert "cache_ttl_seconds" in body
+
+
+def test_is_cache_valid_accepts_naive_expiry():
+    future = "2099-01-01T00:00:00"
+    assert is_cache_valid({"expires_at": future}) is True
 
 
 @pytest.mark.asyncio

@@ -12,13 +12,26 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health")
 def health_check():
-    db_ok = DATABASE_PATH.exists()
-    if not db_ok:
-        with get_connection():
-            db_ok = True
+    try:
+        db_ok = DATABASE_PATH.exists()
+        if not db_ok:
+            with get_connection():
+                db_ok = True
 
-    with get_connection() as conn:
-        stats = get_cache_stats(conn)
+        with get_connection() as conn:
+            stats = get_cache_stats(conn)
+    except Exception as exc:
+        return {
+            "status": "degraded",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "database": {
+                "path": str(DATABASE_PATH),
+                "connected": False,
+                "error": str(exc),
+            },
+            "cache_ttl_seconds": CACHE_TTL,
+            "cache_stats": {"sources": [], "iss_position_samples": 0},
+        }
 
     return {
         "status": "healthy" if db_ok else "degraded",

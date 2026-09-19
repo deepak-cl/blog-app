@@ -58,6 +58,15 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def parse_utc_iso(value: str) -> datetime:
+    """Parse ISO timestamps from SQLite; normalize naive values to UTC."""
+    normalized = value.replace("Z", "+00:00") if value.endswith("Z") else value
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 def save_cache_entry(
     conn: sqlite3.Connection,
     source: str,
@@ -65,7 +74,7 @@ def save_cache_entry(
     ttl_seconds: int,
 ) -> dict[str, Any]:
     fetched_at = utc_now_iso()
-    expires_at = datetime.fromisoformat(fetched_at).timestamp() + ttl_seconds
+    expires_at = parse_utc_iso(fetched_at).timestamp() + ttl_seconds
     expires_at_iso = datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat()
 
     conn.execute(
@@ -113,7 +122,10 @@ def get_latest_cache_entry(
 def is_cache_valid(entry: dict[str, Any] | None) -> bool:
     if entry is None:
         return False
-    expires_at = datetime.fromisoformat(entry["expires_at"])
+    try:
+        expires_at = parse_utc_iso(entry["expires_at"])
+    except (TypeError, ValueError):
+        return False
     return datetime.now(timezone.utc) <= expires_at
 
 
