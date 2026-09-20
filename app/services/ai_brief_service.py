@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from app.config import DEFAULT_WEATHER_LOCATION
 from app.services.analytics_service import AnalyticsService
 from app.services.reverse_geocode_service import resolve_place_label
 from app.services.weather_service import WeatherService
