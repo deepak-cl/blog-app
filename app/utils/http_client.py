@@ -19,6 +19,7 @@ async def get_json(
     *,
     timeout: httpx.Timeout = DEFAULT_TIMEOUT,
     retries: int = MAX_RETRIES,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """GET JSON with retries on 429/503 and exponential backoff."""
     last_error: Exception | None = None
@@ -26,7 +27,7 @@ async def get_json(
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         for attempt in range(retries):
             try:
-                response = await client.get(url)
+                response = await client.get(url, headers=headers)
                 if response.status_code == 429:
                     retry_after = _retry_after_seconds(response)
                     logger.warning(

@@ -145,7 +145,9 @@ rm -f data/hub.db
 |--------|-----------|--------------|-----|
 | trivia | `TRIVIA_API_URL` | opentdb.com | 3600s (1h) |
 | iss | `ISS_API_URL` | api.open-notify.org (HTTP) | 300s (5m) |
-| weather | `WEATHER_API_URL` | open-meteo.com (NYC) | 3600s (1h) |
+| weather | `WEATHER_API_URL` | open-meteo.com (NYC), **NWS fallback** | 3600s (1h) |
+
+Weather responses include an `upstream` field on cached data: `"open-meteo"` or `"nws"`.
 
 ### Upstream rate limits
 
@@ -157,9 +159,10 @@ Open-Meteo limits requests **per IP**. On shared hosts (e.g. Render), many apps 
 | Min 15 min between forced weather fetches | `app/utils/rate_limit.py` |
 | Retry with backoff on 429/503 | `app/utils/http_client.py` |
 | Serve stale cache when 429 and cache exists | `app/services/weather_service.py` |
+| **NWS fallback when Open-Meteo fails and cache is empty** | `app/services/weather_service.py` |
 | Stagger scheduler warm-up (weather +30s, iss +120s, trivia +240s) | `app/services/scheduler.py` |
 
-When rate-limited with no cache, the API returns HTTP **429** (not 502) with a hint to retry later.
+When Open-Meteo is rate-limited **with no cache**, the service tries [api.weather.gov](https://api.weather.gov) (NYC points + forecast + latest observation; `User-Agent` required). If both upstreams fail, the API returns HTTP **429** (not 502) with a hint to retry later.
 
 ### Caching behavior (all sources)
 

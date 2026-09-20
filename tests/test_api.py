@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
+from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -89,10 +91,56 @@ async def test_weather_fetch_and_analytics(client):
     data = response.json()["data"]
     assert "current" in data
     assert "forecast_7d" in data
+    assert data.get("upstream") in {"open-meteo", "nws"}
 
     trends = await client.get("/analytics/weather")
     assert trends.status_code == 200
     assert "daily_forecast" in trends.json()
+
+
+@pytest.mark.asyncio
+async def test_weather_nws_fallback_when_open_meteo_fails(client, monkeypatch):
+    from app.services.weather_service import WeatherService
+
+    nws_payload = {
+        "location": "New York City",
+        "latitude": 40.7128,
+        "longitude": -74.006,
+        "upstream": "nws",
+        "current": {
+            "temperature_c": 17.2,
+            "humidity_percent": 81.0,
+            "wind_speed_kmh": 5.4,
+            "weather_code": None,
+            "condition": "Cloudy",
+            "observed_at": "2026-09-20T08:51:00+00:00",
+        },
+        "forecast_7d": {
+            "dates": ["2026-09-20", "2026-09-21"],
+            "temperature_max_c": [20.6, 18.3],
+            "temperature_min_c": [17.2, 15.0],
+            "precipitation_mm": [None, None],
+        },
+    }
+
+    async def fail_open_meteo(_self):
+        request = httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")
+        response = httpx.Response(429, request=request)
+        raise httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+    monkeypatch.setattr(WeatherService, "fetch_remote", fail_open_meteo)
+    monkeypatch.setattr(
+        WeatherService,
+        "fetch_remote_nws",
+        AsyncMock(return_value=nws_payload),
+    )
+
+    response = await client.post("/weather/refresh")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["from_cache"] is False
+    assert body["data"]["upstream"] == "nws"
+    assert body["data"]["current"]["condition"] == "Cloudy"
 
 
 @pytest.mark.asyncio

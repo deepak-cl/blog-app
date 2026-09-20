@@ -25,7 +25,13 @@ WEATHER_API_URL = (
     "&timezone=America/New_York&forecast_days=7"
 )
 
+# NWS fallback when Open-Meteo is rate-limited (common on shared Render IPs)
+NWS_POINTS_URL = "https://api.weather.gov/points/40.7128,-74.0060"
+NWS_USER_AGENT = "PersonalAPIHub/1.0 (https://github.com/deepak-cl/blog-app)"
+
 DEFAULT_WEATHER_LOCATION = "New York City"
+WEATHER_LATITUDE = 40.7128
+WEATHER_LONGITUDE = -74.0060
 
 # ISS proximity reference (default NYC)
 ISS_REFERENCE_LAT = 40.7128

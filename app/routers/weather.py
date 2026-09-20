@@ -16,7 +16,7 @@ async def get_weather(refresh: bool = False):
 
 @router.post("/refresh")
 async def refresh_weather():
-    """Force refresh weather from Open-Meteo."""
+    """Force refresh weather (Open-Meteo primary, NWS fallback when needed)."""
     return await service.get_or_refresh(force=True)
 
 
