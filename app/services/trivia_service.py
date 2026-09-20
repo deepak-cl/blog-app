@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import httpx
 
 from app.config import CACHE_TTL, TRIVIA_API_URL
@@ -48,10 +50,18 @@ class TriviaService:
                     "from_cache": True,
                 }
 
+        start = time.monotonic()
         data = await self.fetch_remote()
+        fetch_duration_ms = int((time.monotonic() - start) * 1000)
 
         with get_connection() as conn:
-            return save_cache_entry(conn, self.source, data, CACHE_TTL[self.source])
+            return save_cache_entry(
+                conn,
+                self.source,
+                data,
+                CACHE_TTL[self.source],
+                fetch_duration_ms=fetch_duration_ms,
+            )
 
     def get_cached(self) -> dict | None:
         with get_connection() as conn:

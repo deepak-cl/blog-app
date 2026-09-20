@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Personal API Hub</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◈</span>
+      <div>
+        <h1>Personal API Hub</h1>
+        <p class="subtitle">Fetch · Cache · Analyze</p>
+      </div>
+    </div>
+    <nav class="quick-links">
+      <a href="/docs" target="_blank" rel="noopener">API Docs</a>
+      <a href="/api" target="_blank" rel="noopener">API Index</a>
+      <a href="/health" target="_blank" rel="noopener">Health</a>
+    </nav>
+  </header>
+
+  <main class="grid">
+    <section class="card card-wide" id="daily-brief">
+      <div class="card-header">
+        <h2>Daily Brief</h2>
+        <button type="button" class="btn" id="refresh-brief">Refresh</button>
+      </div>
+      <div class="card-body" id="brief-content">
+        <p class="muted">Loading daily brief…</p>
+      </div>
+    </section>
+
+    <section class="card" id="cache-efficiency">
+      <div class="card-header">
+        <h2>Cache Efficiency</h2>
+        <button type="button" class="btn" id="refresh-cache">Refresh</button>
+      </div>
+      <div class="card-body" id="cache-content">
+        <p class="muted">Loading cache stats…</p>
+      </div>
+    </section>
+
+    <section class="card card-wide" id="live-feed">
+      <div class="card-header">
+        <h2>Live SSE Feed</h2>
+        <span class="badge" id="sse-status">connecting</span>
+      </div>
+      <div class="card-body feed" id="feed-content">
+        <p class="muted">Waiting for events…</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Personal API Hub</span>
+    <span id="last-updated">—</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,9 +1,22 @@
 from __future__ import annotations
 
+import random
 from collections import Counter
 from datetime import datetime, timezone
 
-from app.db.database import get_connection, get_iss_position_history
+from app.config import (
+    CACHE_TTL,
+    ISS_NEAR_THRESHOLD_KM,
+    ISS_REFERENCE_LAT,
+    ISS_REFERENCE_LNG,
+)
+from app.db.database import (
+    get_connection,
+    get_iss_position_history,
+    get_latest_cache_entry,
+    get_per_source_cache_summary,
+    parse_utc_iso,
+)
 from app.utils.geo import haversine_km
 
 
@@ -184,3 +197,196 @@ class AnalyticsService:
                 "wettest_day": wettest_day,
             },
         }
+
+    def daily_brief(
+        self,
+        *,
+        reference_lat: float = ISS_REFERENCE_LAT,
+        reference_lng: float = ISS_REFERENCE_LNG,
+        near_threshold_km: float = ISS_NEAR_THRESHOLD_KM,
+    ) -> dict:
+        now = datetime.now(timezone.utc)
+        weather_snapshot: dict | None = None
+        iss_snapshot: dict | None = None
+        trivia_snapshot: dict | None = None
+        notes: list[str] = []
+
+        with get_connection() as conn:
+            weather_entry = get_latest_cache_entry(conn, "weather")
+            iss_entry = get_latest_cache_entry(conn, "iss")
+            trivia_entry = get_latest_cache_entry(conn, "trivia")
+
+        if weather_entry is None:
+            notes.append("No weather data cached.")
+        else:
+            weather_data = weather_entry["data"]
+            forecast = weather_data.get("forecast_7d", {})
+            dates = forecast.get("dates", [])
+            max_temps = forecast.get("temperature_max_c", [])
+            min_temps = forecast.get("temperature_min_c", [])
+            today_high = max_temps[0] if max_temps else None
+            today_low = min_temps[0] if min_temps else None
+            weather_snapshot = {
+                "location": weather_data.get("location"),
+                "cached_at": weather_entry["fetched_at"],
+                "current": weather_data.get("current"),
+                "today": {
+                    "date": dates[0] if dates else None,
+                    "high_c": today_high,
+                    "low_c": today_low,
+                },
+            }
+
+        if iss_entry is None:
+            notes.append("No ISS data cached.")
+        else:
+            iss_data = iss_entry["data"]
+            distance_km = haversine_km(
+                iss_data["latitude"],
+                iss_data["longitude"],
+                reference_lat,
+                reference_lng,
+            )
+            iss_snapshot = {
+                "latitude": iss_data["latitude"],
+                "longitude": iss_data["longitude"],
+                "cached_at": iss_entry["fetched_at"],
+                "reference_point": {
+                    "latitude": reference_lat,
+                    "longitude": reference_lng,
+                    "label": "NYC (default)",
+                },
+                "distance_km": round(distance_km, 2),
+                "near_reference": distance_km <= near_threshold_km,
+                "near_threshold_km": near_threshold_km,
+            }
+
+        if trivia_entry is None:
+            notes.append("No trivia data cached.")
+        else:
+            questions = trivia_entry["data"].get("questions", [])
+            if not questions:
+                notes.append("Trivia cache is empty.")
+            else:
+                question = random.choice(questions)
+                trivia_snapshot = {
+                    "question": question.get("question"),
+                    "category": question.get("category"),
+                    "difficulty": question.get("difficulty"),
+                    "cached_at": trivia_entry["fetched_at"],
+                }
+
+        return {
+            "generated_at": now.isoformat(),
+            "weather": weather_snapshot,
+            "iss": iss_snapshot,
+            "trivia": trivia_snapshot,
+            "notes": notes,
+        }
+
+    def cache_efficiency(self) -> dict:
+        now = datetime.now(timezone.utc)
+        sources_stats: list[dict] = []
+
+        with get_connection() as conn:
+            summaries = get_per_source_cache_summary(conn)
+            summary_by_source = {row["source"]: row for row in summaries}
+
+        for source, ttl_seconds in CACHE_TTL.items():
+            summary = summary_by_source.get(source)
+            if summary is None:
+                sources_stats.append(
+                    {
+                        "source": source,
+                        "entry_count": 0,
+                        "last_fetched": None,
+                        "age_seconds": None,
+                        "ttl_seconds": ttl_seconds,
+                        "is_stale": True,
+                        "hit_friendly_status": "cold_miss",
+                        "avg_fetch_duration_ms": None,
+                    }
+                )
+                continue
+
+            last_fetched = summary["last_fetched"]
+            age_seconds: float | None = None
+            is_stale = True
+            hit_friendly_status = "stale_serves_fallback"
+
+            if last_fetched:
+                fetched_dt = parse_utc_iso(last_fetched)
+                age_seconds = round((now - fetched_dt).total_seconds(), 1)
+                is_stale = age_seconds > ttl_seconds
+
+            latest_expires = summary.get("latest_expires_at")
+            if latest_expires:
+                expires_dt = parse_utc_iso(latest_expires)
+                cache_valid = now <= expires_dt
+                if cache_valid:
+                    hit_friendly_status = "hit_friendly"
+                elif summary["entry_count"] > 0:
+                    hit_friendly_status = "stale_serves_fallback"
+            elif summary["entry_count"] > 0:
+                hit_friendly_status = "stale_serves_fallback"
+
+            sources_stats.append(
+                {
+                    "source": source,
+                    "entry_count": summary["entry_count"],
+                    "last_fetched": last_fetched,
+                    "age_seconds": age_seconds,
+                    "ttl_seconds": ttl_seconds,
+                    "is_stale": is_stale,
+                    "hit_friendly_status": hit_friendly_status,
+                    "avg_fetch_duration_ms": summary.get("avg_fetch_duration_ms"),
+                }
+            )
+
+        hit_friendly_count = sum(
+            1 for row in sources_stats if row["hit_friendly_status"] == "hit_friendly"
+        )
+
+        return {
+            "generated_at": now.isoformat(),
+            "sources": sources_stats,
+            "summary": {
+                "tracked_sources": len(CACHE_TTL),
+                "hit_friendly_sources": hit_friendly_count,
+                "overall_status": (
+                    "optimal"
+                    if hit_friendly_count == len(CACHE_TTL)
+                    else "partial"
+                    if hit_friendly_count > 0
+                    else "cold"
+                ),
+            },
+        }
+
+    def health_summary(self) -> dict:
+        with get_connection() as conn:
+            stats = conn.execute(
+                """
+                SELECT source, COUNT(*) AS entries, MAX(fetched_at) AS last_fetched
+                FROM cache_entries
+                GROUP BY source
+                """
+            ).fetchall()
+
+        sources = {
+            row["source"]: {
+                "cached_entries": row["entries"],
+                "last_fetched": row["last_fetched"],
+            }
+            for row in stats
+        }
+
+        return {
+            "status": "healthy",
+            "source_count": len(sources),
+            "sources": sources,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def cache_stats_snapshot(self) -> dict:
+        return self.cache_efficiency()

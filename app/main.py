@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.db.database import init_db
-from app.routers import analytics, health, iss, trivia, weather
+from app.routers import analytics, events, health, iss, trivia, weather
+from app.services.scheduler import refresh_scheduler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,7 +24,9 @@ logger = logging.getLogger("personal_api_hub")
 async def lifespan(_: FastAPI):
     logger.info("Starting Personal API Hub")
     init_db()
+    refresh_scheduler.start()
     yield
+    refresh_scheduler.shutdown()
     logger.info("Stopping Personal API Hub")
 
 
@@ -69,18 +74,28 @@ app.include_router(trivia.router)
 app.include_router(iss.router)
 app.include_router(weather.router)
 app.include_router(analytics.router)
+app.include_router(events.router)
 
 
-@app.get("/")
-def root():
+@app.get("/api")
+def api_index():
     return {
         "name": "Personal API Hub",
         "docs": "/docs",
+        "dashboard": "/",
         "endpoints": {
             "health": "/health",
             "trivia": "/trivia",
             "iss": "/iss",
             "weather": "/weather",
             "analytics": "/analytics/summary",
+            "daily_brief": "/analytics/daily-brief",
+            "cache_efficiency": "/analytics/cache-efficiency",
+            "events_stream": "/events/stream",
         },
     }
+
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+if STATIC_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

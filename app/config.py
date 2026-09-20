@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -24,3 +25,12 @@ WEATHER_API_URL = (
 )
 
 DEFAULT_WEATHER_LOCATION = "New York City"
+
+# ISS proximity reference (default NYC)
+ISS_REFERENCE_LAT = 40.7128
+ISS_REFERENCE_LNG = -74.0060
+ISS_NEAR_THRESHOLD_KM = 2000.0
+
+# Background scheduler (disabled during pytest)
+SCHEDULER_ENABLED = os.environ.get("TESTING") != "1"
+SSE_HEARTBEAT_SECONDS = 30

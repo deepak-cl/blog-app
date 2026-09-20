@@ -18,7 +18,7 @@ No API keys required. No external database server required.
 
 **Repository:** https://github.com/deepak-cl/blog-app (planned rename: `personal-api-hub`)
 **Active branch:** `cursor/personal-api-data-hub-0354`
-**Open PR:** https://github.com/deepak-cl/blog-app/pull/1 (draft, not yet merged to `main`)
+**Previous PR:** closed by user; work continues on feature branch
 
 ---
 
@@ -29,10 +29,14 @@ No API keys required. No external database server required.
 | Trivia feed | Done | Open Trivia DB, 10 MCQ, 1h TTL |
 | ISS location | Done | Open Notify, 5min TTL, position history |
 | Weather feed | Done | Open-Meteo NYC, 30min TTL, 7-day forecast |
-| SQLite caching | Done | Auto-created at `data/hub.db` |
-| Analytics | Done | summary, trivia, iss, weather |
+| SQLite caching | Done | Auto-created at `data/hub.db`; optional `fetch_duration_ms` |
+| Background scheduler | Done | APScheduler refreshes all sources on TTL intervals |
+| Analytics | Done | summary, trivia, iss, weather, **daily-brief**, **cache-efficiency** |
+| SSE events stream | Done | `GET /events/stream` — health, cache stats, refresh notices |
+| Web dashboard | Done | Dark-theme SPA at `/` (`static/`) |
 | Health endpoint | Done | Always HTTP 200; check `status` field |
-| Bruno collection | Done | 18 requests in `bruno/Personal API Hub/` |
+| Deploy config | Done | `Dockerfile`, `render.yaml` (Render free tier) |
+| Bruno collection | Done | 22+ requests in `bruno/Personal API Hub/` |
 | Python 3.9 support | Done | `from __future__ import annotations` in all app modules |
 | Error handling | Done | 502 for upstream failures; 500 logs traceback |
 | Legacy Java blog app | Removed | Spring Boot / Maven deleted from repo |
@@ -76,13 +80,14 @@ routers services analytics
 
 | Layer | Path | Role |
 |-------|------|------|
-| Entry | `app/main.py` | App setup, lifespan, exception handlers, router registration |
-| Config | `app/config.py` | API URLs, cache TTLs, DB path |
+| Entry | `app/main.py` | App setup, lifespan, scheduler, static UI mount |
+| Config | `app/config.py` | API URLs, cache TTLs, ISS reference point, scheduler |
 | Routers | `app/routers/` | HTTP endpoints only; delegate to services |
-| Services | `app/services/` | Fetch upstream APIs, cache logic |
+| Services | `app/services/` | Fetch upstream APIs, cache logic, scheduler, event bus |
 | Analytics | `app/services/analytics_service.py` | Aggregations over cached data |
 | Database | `app/db/database.py` | SQLite schema, cache CRUD, ISS position history |
 | Utils | `app/utils/geo.py` | Haversine distance for ISS analytics |
+| Static UI | `static/` | Dashboard HTML/CSS/JS served at `/` |
 
 ---
 
@@ -97,10 +102,13 @@ routers services analytics
 │   ├── routers/          # health, trivia, iss, weather, analytics
 │   ├── services/         # trivia_service, iss_service, weather_service, analytics_service
 │   └── utils/geo.py
+├── static/                   # Web dashboard (served at /)
 ├── bruno/Personal API Hub/   # API test collection
 ├── tests/test_api.py
 ├── data/hub.db               # runtime (gitignored)
 ├── docs/PROJECT.md           # this file
+├── Dockerfile
+├── render.yaml               # Render free-tier deploy
 ├── requirements.txt
 └── README.md
 ```
@@ -122,7 +130,7 @@ rm -f data/hub.db
 ### Tables
 
 **cache_entries**
-- `id`, `source`, `data` (JSON text), `fetched_at`, `expires_at`
+- `id`, `source`, `data` (JSON text), `fetched_at`, `expires_at`, `fetch_duration_ms` (optional)
 - Sources: `trivia`, `iss`, `weather`
 
 **iss_positions**
@@ -152,8 +160,9 @@ rm -f data/hub.db
 
 ## 8. API endpoints
 
-### Root
-- `GET /` — service index
+### Root / UI
+- `GET /` — web dashboard (static HTML)
+- `GET /api` — JSON service index
 
 ### Health
 - `GET /health` — always HTTP 200; `status`: `healthy` or `degraded`
@@ -168,8 +177,16 @@ Each of `/trivia`, `/iss`, `/weather` supports the caching pattern above.
 | `GET /analytics/trivia` | Difficulty/category/type breakdown |
 | `GET /analytics/iss` | Position history + distance traveled (km) |
 | `GET /analytics/weather` | 7-day trends, warmest/coldest/wettest days |
+| `GET /analytics/daily-brief` | Cross-source brief: weather, ISS proximity, trivia question |
+| `GET /analytics/cache-efficiency` | Per-source cache age, TTL, stale flag, hit-friendly status |
 
-Interactive docs: http://localhost:8000/docs
+### Events (SSE)
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /events/stream` | SSE heartbeat every 30s + refresh completed/failed notices |
+
+Interactive docs: http://localhost:8000/docs  
+Dashboard: http://localhost:8000/
 
 ---
 
@@ -193,6 +210,25 @@ curl http://localhost:8000/analytics/summary
 ### Tests
 ```bash
 PYTHONPATH=. pytest tests/ -v
+```
+
+### Deploy (Render free tier)
+
+1. Push this branch to GitHub
+2. Create a **Web Service** on [Render](https://render.com/) and connect the repo
+3. Use `render.yaml` (Blueprint) or manual settings:
+   - **Build:** `pip install -r requirements.txt`
+   - **Start:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+   - **Health check path:** `/health`
+4. Open the service URL — dashboard at `/`, API at `/api`
+
+> **Note:** Render free tier uses ephemeral disk. SQLite cache (`data/hub.db`) resets on redeploy/restart.
+
+### Docker
+
+```bash
+docker build -t personal-api-hub .
+docker run -p 8000:8000 personal-api-hub
 ```
 
 ---
@@ -273,6 +309,7 @@ Follow this checklist when the user requests a new data source, endpoint, or ana
 6. 500 fixes: datetime parsing, DB connection handling, error handlers
 7. Health hardening: auto-init DB, always-200 health, server logging
 8. This lookup file created
+9. Tier 1: background scheduler, daily-brief, cache-efficiency, SSE stream, web UI, Render/Docker deploy
 
 ---
 
@@ -287,8 +324,8 @@ Follow this checklist when the user requests a new data source, endpoint, or ana
 
 ## 16. Suggested next steps (not yet built)
 
-- Merge PR #1 to `main`
+- Merge feature branch to `main`
 - Rename GitHub repo to `personal-api-hub`
 - Additional data sources (user may request)
-- Docker setup (not requested yet)
 - Environment-based config via `.env` (not requested yet)
+- Persistent volume on paid hosting for SQLite durability
