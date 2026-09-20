@@ -13,6 +13,7 @@ from app.db.database import init_db
 from app.routers import analytics, events, health, iss, trivia, weather
 from app.services.scheduler import refresh_scheduler
 from app.services.weather_service import UpstreamRateLimitedError
+from app.utils.errors import friendly_http_error
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,8 +51,8 @@ async def rate_limit_handler(_: Request, exc: UpstreamRateLimitedError):
             "detail": str(exc),
             "source": exc.source,
             "hint": (
-                "Open-Meteo limits requests per IP. Stale cache is served when available; "
-                "NWS fallback applies only for US coordinates."
+                "Open-Meteo limits requests per IP on shared hosts. Stale cache is served when "
+                "available. For Bengaluru, set IMD_API_KEY or OPENWEATHER_API_KEY on Render."
             ),
         },
     )
@@ -59,9 +60,12 @@ async def rate_limit_handler(_: Request, exc: UpstreamRateLimitedError):
 
 @app.exception_handler(httpx.HTTPError)
 async def upstream_http_error_handler(_: Request, exc: httpx.HTTPError):
+    status_code = 502
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+        status_code = 429
     return JSONResponse(
-        status_code=502,
-        content={"detail": f"Upstream API request failed: {exc}"},
+        status_code=status_code,
+        content={"detail": friendly_http_error(exc)},
     )
 
 

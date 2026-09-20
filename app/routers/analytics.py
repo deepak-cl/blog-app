@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services.ai_brief_service import AIBriefNotConfiguredError, AIBriefService
+from app.utils.errors import friendly_http_error
 from app.services.analytics_service import AnalyticsService
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -84,5 +86,13 @@ async def _generate_ai_brief(provider: str | None) -> dict:
             detail=str(exc),
             headers={"X-AI-Brief-Status": "not-configured"},
         ) from exc
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        raise HTTPException(
+            status_code=502 if status >= 500 else status,
+            detail=friendly_http_error(exc),
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=friendly_http_error(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

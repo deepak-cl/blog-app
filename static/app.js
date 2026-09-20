@@ -13,6 +13,27 @@ function fmt(value, fallback = "—") {
   return value === null || value === undefined ? fallback : value;
 }
 
+async function parseApiError(res) {
+  try {
+    const data = await res.json();
+    if (data.detail) {
+      return data.hint ? `${data.detail} ${data.hint}` : data.detail;
+    }
+  } catch (_) {
+    /* response may not be JSON */
+  }
+  if (res.status === 429) {
+    return "Weather service is temporarily rate-limited. Cached data is shown when available.";
+  }
+  if (res.status === 502) {
+    return "A data source is temporarily unavailable. Try again shortly.";
+  }
+  if (res.status === 503) {
+    return "This feature is not configured on the server yet.";
+  }
+  return `Request failed (HTTP ${res.status}). Try again shortly.`;
+}
+
 function skeletonMarkup(lines = 3) {
   const widths = ["wide", "", "short"];
   return `<div class="skeleton-stack" aria-hidden="true">${Array.from({ length: lines })
@@ -107,11 +128,15 @@ async function refreshSource(source) {
 
   try {
     const res = await fetch(`/${source}/refresh`, { method: "POST" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const message = await parseApiError(res);
+      throw new Error(message);
+    }
     await loadDailyBrief();
   } catch (err) {
+    const message = err.message || "Check upstream availability.";
     document.getElementById(`${source}-content`).innerHTML =
-      `<p class="error-state">Refresh failed for ${source}. Check upstream availability.</p>`;
+      `<p class="error-state">${source === "weather" ? "Weather refresh failed." : `Refresh failed for ${source}.`} ${message}</p>`;
     console.error(`${source} refresh error`, err);
   } finally {
     setCardRefreshing(source, false);
@@ -180,14 +205,14 @@ async function generateAiBrief() {
     }
 
     if (!res.ok) {
-      throw new Error(data.detail || `HTTP ${res.status}`);
+      throw new Error(data.detail || `Request failed (HTTP ${res.status}). Try again shortly.`);
     }
 
     aiBriefEl.innerHTML = `
       <p class="ai-brief-text">${data.brief}</p>
       <p class="meta-row">${data.provider} · ${data.model} · ${data.location}</p>`;
   } catch (err) {
-    aiBriefEl.innerHTML = `<p class="error-state">Could not generate AI brief. ${err.message || "Try again."}</p>`;
+    aiBriefEl.innerHTML = `<p class="error-state">${err.message || "Could not generate AI brief. Try again."}</p>`;
     console.error("ai-brief error", err);
   } finally {
     generateAiBtn.disabled = false;

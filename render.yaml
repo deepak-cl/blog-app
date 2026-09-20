@@ -16,3 +16,12 @@ services:
       #   sync: false
       # - key: GEMINI_API_KEY
       #   sync: false
+      # Optional — reliable Bengaluru/India weather when Open-Meteo rate-limits Render
+      # Register free at https://api.imd.gov.in/public/index.php
+      # - key: IMD_API_KEY
+      #   sync: false
+      # - key: IMD_CITY_ID
+      #   value: "42182"
+      # Free global fallback: https://openweathermap.org/api (1M calls/month)
+      # - key: OPENWEATHER_API_KEY
+      #   sync: false

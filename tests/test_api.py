@@ -94,7 +94,7 @@ async def test_weather_fetch_and_analytics(client):
     data = response.json()["data"]
     assert "current" in data
     assert "forecast_7d" in data
-    assert data.get("upstream") in {"open-meteo", "nws"}
+    assert data.get("upstream") in {"open-meteo", "nws", "imd", "openweather", "wttr"}
 
     trends = await client.get("/analytics/weather")
     assert trends.status_code == 200
@@ -151,8 +151,29 @@ async def test_weather_nws_fallback_when_open_meteo_fails(client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_weather_skips_nws_outside_us_when_open_meteo_fails(client, monkeypatch):
+async def test_weather_wttr_fallback_when_open_meteo_fails(client, monkeypatch):
     from app.services.weather_service import WeatherService
+
+    wttr_payload = {
+        "location": "Anekal, Bengaluru, Karnataka, India",
+        "latitude": 12.7081,
+        "longitude": 77.6953,
+        "upstream": "wttr",
+        "current": {
+            "temperature_c": 24.0,
+            "humidity_percent": 77.0,
+            "wind_speed_kmh": 11.0,
+            "weather_code": "176",
+            "condition": "Patchy rain nearby",
+            "observed_at": "09:55 AM",
+        },
+        "forecast_7d": {
+            "dates": ["2026-09-20", "2026-09-21"],
+            "temperature_max_c": [28.0, 27.0],
+            "temperature_min_c": [20.0, 19.0],
+            "precipitation_mm": [0.0, 0.0],
+        },
+    }
 
     async def fail_open_meteo(_self):
         request = httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")
@@ -161,14 +182,136 @@ async def test_weather_skips_nws_outside_us_when_open_meteo_fails(client, monkey
 
     monkeypatch.setattr(WeatherService, "fetch_remote", fail_open_meteo)
     monkeypatch.setattr(
-        "app.services.weather_service.is_us_coordinates",
-        lambda _lat, _lng: False,
+        WeatherService,
+        "fetch_remote_wttr",
+        AsyncMock(return_value=wttr_payload),
     )
+    monkeypatch.delenv("IMD_API_KEY", raising=False)
+    monkeypatch.delenv("OPENWEATHER_API_KEY", raising=False)
+
+    response = await client.post("/weather/refresh")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"]["upstream"] == "wttr"
+    assert body["data"]["current"]["condition"] == "Patchy rain nearby"
+
+
+@pytest.mark.asyncio
+async def test_weather_openweather_fallback(client, monkeypatch):
+    from app.services.weather_service import WeatherService
+
+    openweather_payload = {
+        "location": "Anekal, Bengaluru, Karnataka, India",
+        "latitude": 12.7081,
+        "longitude": 77.6953,
+        "upstream": "openweather",
+        "current": {
+            "temperature_c": 25.0,
+            "humidity_percent": 70,
+            "wind_speed_kmh": 12.0,
+            "weather_code": 801,
+            "condition": "Few Clouds",
+            "observed_at": "2026-09-20T10:00:00+00:00",
+        },
+        "forecast_7d": {
+            "dates": ["2026-09-20"],
+            "temperature_max_c": [28.0],
+            "temperature_min_c": [20.0],
+            "precipitation_mm": [0.0],
+        },
+    }
+
+    async def fail_open_meteo(_self):
+        raise httpx.HTTPStatusError(
+            "rate limited",
+            request=httpx.Request("GET", "https://api.open-meteo.com/v1/forecast"),
+            response=httpx.Response(429, request=httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")),
+        )
+
+    monkeypatch.setattr(WeatherService, "fetch_remote", fail_open_meteo)
+    monkeypatch.setattr(
+        WeatherService,
+        "fetch_remote_openweather",
+        AsyncMock(return_value=openweather_payload),
+    )
+    monkeypatch.setenv("OPENWEATHER_API_KEY", "test-openweather-key")
+    monkeypatch.delenv("IMD_API_KEY", raising=False)
+
+    response = await client.post("/weather/refresh")
+    assert response.status_code == 200
+    assert response.json()["data"]["upstream"] == "openweather"
+
+
+@pytest.mark.asyncio
+async def test_weather_imd_fallback(client, monkeypatch):
+    from app.services.weather_service import WeatherService
+
+    imd_payload = {
+        "location": "Bengaluru",
+        "latitude": 12.97,
+        "longitude": 77.59,
+        "upstream": "imd",
+        "current": {
+            "temperature_c": 29.0,
+            "humidity_percent": 65.0,
+            "wind_speed_kmh": None,
+            "weather_code": None,
+            "condition": "Partly cloudy sky",
+            "observed_at": "2026-09-20",
+        },
+        "forecast_7d": {
+            "dates": ["2026-09-20", "2026-09-21"],
+            "temperature_max_c": [29.0, 28.0],
+            "temperature_min_c": [20.0, 19.0],
+            "precipitation_mm": [0.0, None],
+        },
+    }
+
+    async def fail_open_meteo(_self):
+        raise httpx.HTTPStatusError(
+            "rate limited",
+            request=httpx.Request("GET", "https://api.open-meteo.com/v1/forecast"),
+            response=httpx.Response(429, request=httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")),
+        )
+
+    monkeypatch.setattr(WeatherService, "fetch_remote", fail_open_meteo)
+    monkeypatch.setattr(
+        WeatherService,
+        "fetch_remote_imd",
+        AsyncMock(return_value=imd_payload),
+    )
+    monkeypatch.setenv("IMD_API_KEY", "test-imd-key")
+
+    response = await client.post("/weather/refresh")
+    assert response.status_code == 200
+    assert response.json()["data"]["upstream"] == "imd"
+
+
+@pytest.mark.asyncio
+async def test_weather_all_providers_fail_returns_429(client, monkeypatch):
+    from app.services.weather_service import WeatherService
+
+    async def fail(_self):
+        raise httpx.HTTPStatusError(
+            "rate limited",
+            request=httpx.Request("GET", "https://api.open-meteo.com/v1/forecast"),
+            response=httpx.Response(429, request=httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")),
+        )
+
+    for method in (
+        "fetch_remote",
+        "fetch_remote_imd",
+        "fetch_remote_openweather",
+        "fetch_remote_wttr",
+    ):
+        monkeypatch.setattr(WeatherService, method, fail)
+    monkeypatch.delenv("IMD_API_KEY", raising=False)
+    monkeypatch.delenv("OPENWEATHER_API_KEY", raising=False)
 
     response = await client.post("/weather/refresh")
     assert response.status_code == 429
     body = response.json()
-    assert "NWS fallback is US-only" in body["detail"]
+    assert "All weather providers failed" in body["detail"]
 
 
 @pytest.mark.asyncio
@@ -224,12 +367,29 @@ async def test_cache_efficiency(client):
 
     weather = next(row for row in body["sources"] if row["source"] == "weather")
     assert weather["entry_count"] >= 1
-    assert weather["ttl_seconds"] == 3600
+    assert weather["ttl_seconds"] == 7200
     assert weather["hit_friendly_status"] in {
         "hit_friendly",
         "stale_serves_fallback",
         "cold_miss",
     }
+
+
+def test_anthropic_model_id_is_current():
+    from app.services.ai_brief_service import PROVIDER_CONFIG
+
+    assert PROVIDER_CONFIG["anthropic"]["model"] == "claude-haiku-4-5"
+
+
+def test_friendly_http_error_messages():
+    from app.utils.errors import friendly_http_status_error
+
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    response = httpx.Response(404, request=request)
+    exc = httpx.HTTPStatusError("not found", request=request, response=response)
+    message = friendly_http_status_error(exc)
+    assert "Anthropic" in message
+    assert "model" in message.lower()
 
 
 @pytest.mark.asyncio

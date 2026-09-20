@@ -3,6 +3,11 @@ from __future__ import annotations
 import math
 
 
+def is_india_coordinates(lat: float, lng: float) -> bool:
+    """True when lat/lng fall within India's approximate bounding box."""
+    return 6.0 <= lat <= 37.0 and 68.0 <= lng <= 97.5
+
+
 def is_us_coordinates(lat: float, lng: float) -> bool:
     """True when lat/lng fall within US NWS coverage (continental US, AK, HI, PR)."""
     if 24.0 <= lat <= 49.5 and -125.0 <= lng <= -66.0:

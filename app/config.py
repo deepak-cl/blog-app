@@ -10,7 +10,8 @@ DATABASE_PATH = BASE_DIR / "data" / "hub.db"
 CACHE_TTL = {
     "trivia": 3600,
     "iss": 300,
-    "weather": 3600,
+    # Longer TTL reduces Open-Meteo pressure on shared Render IPs.
+    "weather": 7200,
 }
 
 # External API endpoints
@@ -33,6 +34,11 @@ WEATHER_API_URL = (
 NWS_USER_AGENT = "PersonalAPIHub/1.0 (https://github.com/deepak-cl/blog-app)"
 
 DEFAULT_WEATHER_LOCATION = "Anekal, Bengaluru, Karnataka, India"
+
+# Optional weather providers (see internal/weather-india-fix.md)
+IMD_API_KEY = os.environ.get("IMD_API_KEY", "").strip()
+IMD_CITY_ID = os.environ.get("IMD_CITY_ID", "42182").strip() or "42182"
+OPENWEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY", "").strip()
 
 # ISS proximity reference (default: Anekal, Bengaluru)
 ISS_REFERENCE_LAT = WEATHER_LATITUDE

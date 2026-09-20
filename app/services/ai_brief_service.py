@@ -17,7 +17,7 @@ PROVIDER_CONFIG: dict[str, dict[str, Any]] = {
     },
     "anthropic": {
         "env_vars": ("ANTHROPIC_API_KEY",),
-        "model": "claude-3-5-haiku-20241022",
+        "model": "claude-haiku-4-5",
         "label": "Anthropic",
     },
     "gemini": {
