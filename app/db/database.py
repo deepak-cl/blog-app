@@ -28,7 +28,8 @@ def init_db() -> None:
                 source TEXT NOT NULL,
                 data TEXT NOT NULL,
                 fetched_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL
+                expires_at TEXT NOT NULL,
+                fetch_duration_ms INTEGER
             );
 
             CREATE INDEX IF NOT EXISTS idx_cache_source_fetched
@@ -45,8 +46,19 @@ def init_db() -> None:
                 ON iss_positions(fetched_at DESC);
             """
         )
+        _migrate_cache_entries(conn)
     _db_initialized = True
     logger.info("SQLite ready at %s", DATABASE_PATH)
+
+
+def _migrate_cache_entries(conn: sqlite3.Connection) -> None:
+    columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(cache_entries)").fetchall()
+    }
+    if "fetch_duration_ms" not in columns:
+        conn.execute(
+            "ALTER TABLE cache_entries ADD COLUMN fetch_duration_ms INTEGER"
+        )
 
 
 @contextmanager
@@ -83,6 +95,8 @@ def save_cache_entry(
     source: str,
     data: dict[str, Any],
     ttl_seconds: int,
+    *,
+    fetch_duration_ms: int | None = None,
 ) -> dict[str, Any]:
     fetched_at = utc_now_iso()
     expires_at = parse_utc_iso(fetched_at).timestamp() + ttl_seconds
@@ -90,16 +104,17 @@ def save_cache_entry(
 
     conn.execute(
         """
-        INSERT INTO cache_entries (source, data, fetched_at, expires_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO cache_entries (source, data, fetched_at, expires_at, fetch_duration_ms)
+        VALUES (?, ?, ?, ?, ?)
         """,
-        (source, json.dumps(data), fetched_at, expires_at_iso),
+        (source, json.dumps(data), fetched_at, expires_at_iso, fetch_duration_ms),
     )
     return {
         "source": source,
         "data": data,
         "fetched_at": fetched_at,
         "expires_at": expires_at_iso,
+        "fetch_duration_ms": fetch_duration_ms,
         "from_cache": False,
     }
 
@@ -169,6 +184,35 @@ def get_iss_position_history(
             "latitude": row["latitude"],
             "longitude": row["longitude"],
             "fetched_at": row["fetched_at"],
+        }
+        for row in rows
+    ]
+
+
+def get_per_source_cache_summary(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT source,
+               COUNT(*) AS entry_count,
+               MAX(fetched_at) AS last_fetched,
+               MAX(expires_at) AS latest_expires_at,
+               AVG(fetch_duration_ms) AS avg_fetch_duration_ms
+        FROM cache_entries
+        GROUP BY source
+        """
+    ).fetchall()
+
+    return [
+        {
+            "source": row["source"],
+            "entry_count": int(row["entry_count"]),
+            "last_fetched": row["last_fetched"],
+            "latest_expires_at": row["latest_expires_at"],
+            "avg_fetch_duration_ms": (
+                round(float(row["avg_fetch_duration_ms"]), 1)
+                if row["avg_fetch_duration_ms"] is not None
+                else None
+            ),
         }
         for row in rows
     ]

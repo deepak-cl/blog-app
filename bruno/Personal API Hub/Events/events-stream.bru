@@ -1,0 +1,11 @@
+meta {
+  name: Events Stream (SSE)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/events/stream
+  body: none
+  auth: inherit
+}

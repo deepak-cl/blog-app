@@ -71,7 +71,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 | Link | Purpose |
 |------|---------|
-| http://localhost:8000/ | Service index |
+| http://localhost:8000/ | Web dashboard |
+| http://localhost:8000/api | JSON API index |
 | http://localhost:8000/health | Health + cache stats |
 | http://localhost:8000/docs | Interactive Swagger UI |
 
@@ -125,7 +126,8 @@ TTL values live in `app/config.py` and appear in `GET /health`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/` | Service name and endpoint index |
+| `GET` | `/` | Web dashboard (dark theme) |
+| `GET` | `/api` | JSON service index |
 | `GET` | `/health` | Status, DB connectivity, cache stats |
 
 ### Data Sources
@@ -140,6 +142,14 @@ Each of `/trivia`, `/iss`, and `/weather` supports the caching pattern above.
 | `GET` | `/analytics/trivia` | Difficulty and category breakdown |
 | `GET` | `/analytics/iss` | Position history + distance traveled (km) |
 | `GET` | `/analytics/weather` | 7-day trends, warmest/coldest/wettest days |
+| `GET` | `/analytics/daily-brief` | Weather + ISS proximity + random trivia question |
+| `GET` | `/analytics/cache-efficiency` | Per-source cache age, TTL, hit-friendly status |
+
+### Events (SSE)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/events/stream` | Live SSE feed (health, cache stats, refresh notices) |
 
 Full schemas: http://localhost:8000/docs
 
@@ -171,7 +181,27 @@ source .venv/bin/activate
 PYTHONPATH=. pytest tests/ -v
 ```
 
-Tests hit live external APIs. All 5 should pass with network access.
+Tests hit live external APIs. All tests should pass with network access.
+
+---
+
+## Deploy on Render (free tier)
+
+1. Push the repo to GitHub and connect it on [Render](https://render.com/)
+2. Create a **Web Service** using the included `render.yaml` blueprint, or set manually:
+   - **Build command:** `pip install -r requirements.txt`
+   - **Start command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+   - **Health check path:** `/health`
+3. Visit your service URL — dashboard at `/`, API docs at `/docs`
+
+> **Ephemeral SQLite:** On Render's free tier, the filesystem resets on redeploy. Cached data in `data/hub.db` is lost when the service restarts or redeploys. The background scheduler repopulates cache automatically.
+
+### Docker
+
+```bash
+docker build -t personal-api-hub .
+docker run -p 8000:8000 personal-api-hub
+```
 
 ---
 
@@ -186,9 +216,12 @@ Tests hit live external APIs. All 5 should pass with network access.
 │   ├── routers/             # HTTP routes
 │   ├── services/            # Fetch + cache logic
 │   └── utils/               # ISS distance (Haversine)
+├── static/                  # Web dashboard
 ├── bruno/Personal API Hub/  # Bruno .bru collection
 ├── tests/
 ├── data/                    # SQLite DB (runtime)
+├── Dockerfile
+├── render.yaml
 ├── requirements.txt
 └── README.md
 ```

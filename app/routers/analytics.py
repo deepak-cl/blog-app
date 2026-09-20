@@ -30,3 +30,26 @@ def iss_analytics(limit: int = 50):
 def weather_analytics():
     """7-day weather trends and comparisons."""
     return service.weather_trends()
+
+
+@router.get("/daily-brief")
+def daily_brief(
+    reference_lat: float | None = None,
+    reference_lng: float | None = None,
+    near_threshold_km: float | None = None,
+):
+    """Cross-source daily brief: weather, ISS proximity, and a trivia question."""
+    kwargs: dict = {}
+    if reference_lat is not None:
+        kwargs["reference_lat"] = reference_lat
+    if reference_lng is not None:
+        kwargs["reference_lng"] = reference_lng
+    if near_threshold_km is not None:
+        kwargs["near_threshold_km"] = near_threshold_km
+    return service.daily_brief(**kwargs)
+
+
+@router.get("/cache-efficiency")
+def cache_efficiency():
+    """Per-source cache efficiency and hit-friendly status."""
+    return service.cache_efficiency()

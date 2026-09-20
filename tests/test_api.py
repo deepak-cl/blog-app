@@ -110,3 +110,51 @@ async def test_analytics_summary(client):
     trivia = await client.get("/analytics/trivia")
     assert trivia.status_code == 200
     assert "by_difficulty" in trivia.json()
+
+
+@pytest.mark.asyncio
+async def test_daily_brief(client):
+    await client.post("/trivia/refresh")
+    await client.post("/iss/refresh")
+    await client.post("/weather/refresh")
+
+    response = await client.get("/analytics/daily-brief")
+    assert response.status_code == 200
+    body = response.json()
+    assert "generated_at" in body
+    assert body["weather"] is not None
+    assert body["iss"] is not None
+    assert "distance_km" in body["iss"]
+    assert "near_reference" in body["iss"]
+    assert body["trivia"] is not None
+    assert "question" in body["trivia"]
+    assert "correct_answer" not in body["trivia"]
+
+
+@pytest.mark.asyncio
+async def test_cache_efficiency(client):
+    await client.post("/weather/refresh")
+
+    response = await client.get("/analytics/cache-efficiency")
+    assert response.status_code == 200
+    body = response.json()
+    assert "sources" in body
+    assert "summary" in body
+
+    weather = next(row for row in body["sources"] if row["source"] == "weather")
+    assert weather["entry_count"] >= 1
+    assert weather["ttl_seconds"] == 1800
+    assert weather["hit_friendly_status"] in {
+        "hit_friendly",
+        "stale_serves_fallback",
+        "cold_miss",
+    }
+
+
+@pytest.mark.asyncio
+async def test_api_index(client):
+    response = await client.get("/api")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "Personal API Hub"
+    assert "daily_brief" in body["endpoints"]

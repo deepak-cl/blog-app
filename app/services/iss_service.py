@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import httpx
 
 from app.config import CACHE_TTL, ISS_API_URL
@@ -39,12 +41,20 @@ class ISSService:
                     "from_cache": True,
                 }
 
+        start = time.monotonic()
         data = await self.fetch_remote()
+        fetch_duration_ms = int((time.monotonic() - start) * 1000)
         fetched_at = utc_now_iso()
 
         with get_connection() as conn:
             save_iss_position(conn, data["latitude"], data["longitude"], fetched_at)
-            result = save_cache_entry(conn, self.source, data, CACHE_TTL[self.source])
+            result = save_cache_entry(
+                conn,
+                self.source,
+                data,
+                CACHE_TTL[self.source],
+                fetch_duration_ms=fetch_duration_ms,
+            )
             result["fetched_at"] = fetched_at
             return result
 
