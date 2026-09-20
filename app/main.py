@@ -49,7 +49,10 @@ async def rate_limit_handler(_: Request, exc: UpstreamRateLimitedError):
         content={
             "detail": str(exc),
             "source": exc.source,
-            "hint": "Open-Meteo limits requests per IP. NWS fallback is used when cache is empty.",
+            "hint": (
+                "Open-Meteo limits requests per IP. Stale cache is served when available; "
+                "NWS fallback applies only for US coordinates."
+            ),
         },
     )
 

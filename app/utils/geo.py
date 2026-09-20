@@ -3,6 +3,23 @@ from __future__ import annotations
 import math
 
 
+def is_us_coordinates(lat: float, lng: float) -> bool:
+    """True when lat/lng fall within US NWS coverage (continental US, AK, HI, PR)."""
+    if 24.0 <= lat <= 49.5 and -125.0 <= lng <= -66.0:
+        return True
+    if 51.0 <= lat <= 72.0 and -180.0 <= lng <= -129.0:
+        return True
+    if 18.0 <= lat <= 23.0 and -161.0 <= lng <= -154.0:
+        return True
+    if 17.5 <= lat <= 18.6 and -67.5 <= lng <= -65.0:
+        return True
+    return False
+
+
+def nws_points_url(lat: float, lng: float) -> str:
+    return f"https://api.weather.gov/points/{lat},{lng}"
+
+
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Great-circle distance between two points on Earth in kilometers."""
     radius_km = 6371.0

@@ -10,13 +10,13 @@ service = WeatherService()
 
 @router.get("")
 async def get_weather(refresh: bool = False):
-    """Return weather for NYC, using cache unless refresh=true."""
+    """Return weather for Anekal/Bengaluru, using cache unless refresh=true."""
     return await service.get_or_refresh(force=refresh)
 
 
 @router.post("/refresh")
 async def refresh_weather():
-    """Force refresh weather (Open-Meteo primary, NWS fallback when needed)."""
+    """Force refresh weather (Open-Meteo primary; NWS fallback for US coords only)."""
     return await service.get_or_refresh(force=True)
 
 

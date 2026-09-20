@@ -28,7 +28,7 @@ No API keys required. No external database server required.
 |------|--------|-------|
 | Trivia feed | Done | Open Trivia DB, 10 MCQ, 1h TTL |
 | ISS location | Done | Open Notify, 5min TTL, position history |
-| Weather feed | Done | Open-Meteo NYC, 30min TTL, 7-day forecast |
+| Weather feed | Done | Open-Meteo Anekal/Bengaluru, 1h TTL, 7-day forecast |
 | SQLite caching | Done | Auto-created at `data/hub.db`; optional `fetch_duration_ms` |
 | Background scheduler | Done | APScheduler refreshes all sources on TTL intervals |
 | Analytics | Done | summary, trivia, iss, weather, **daily-brief**, **cache-efficiency** |
@@ -145,7 +145,7 @@ rm -f data/hub.db
 |--------|-----------|--------------|-----|
 | trivia | `TRIVIA_API_URL` | opentdb.com | 3600s (1h) |
 | iss | `ISS_API_URL` | api.open-notify.org (HTTP) | 300s (5m) |
-| weather | `WEATHER_API_URL` | open-meteo.com (NYC), **NWS fallback** | 3600s (1h) |
+| weather | `WEATHER_API_URL` | open-meteo.com (Anekal/Bengaluru), **NWS fallback (US only)** | 3600s (1h) |
 
 Weather responses include an `upstream` field on cached data: `"open-meteo"` or `"nws"`.
 
@@ -159,10 +159,12 @@ Open-Meteo limits requests **per IP**. On shared hosts (e.g. Render), many apps 
 | Min 15 min between forced weather fetches | `app/utils/rate_limit.py` |
 | Retry with backoff on 429/503 | `app/utils/http_client.py` |
 | Serve stale cache when 429 and cache exists | `app/services/weather_service.py` |
-| **NWS fallback when Open-Meteo fails and cache is empty** | `app/services/weather_service.py` |
+| **NWS fallback when Open-Meteo fails, cache empty, and coords are US** | `app/services/weather_service.py` |
 | Stagger scheduler warm-up (weather +30s, iss +120s, trivia +240s) | `app/services/scheduler.py` |
 
-When Open-Meteo is rate-limited **with no cache**, the service tries [api.weather.gov](https://api.weather.gov) (NYC points + forecast + latest observation; `User-Agent` required). If both upstreams fail, the API returns HTTP **429** (not 502) with a hint to retry later.
+Default location: **Anekal, Bengaluru, Karnataka, India** (`12.7081, 77.6953`, timezone `Asia/Kolkata`).
+
+When Open-Meteo is rate-limited **with no cache**, the service tries [api.weather.gov](https://api.weather.gov) **only for US coordinates** (points + forecast + latest observation; `User-Agent` required). For India and other non-US locations, Open-Meteo plus stale cache is the fallback path. If all options fail, the API returns HTTP **429** (not 502) with a hint to retry later.
 
 ### Caching behavior (all sources)
 

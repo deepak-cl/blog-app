@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from app.config import (
     CACHE_TTL,
     ISS_NEAR_THRESHOLD_KM,
+    ISS_REFERENCE_LABEL,
     ISS_REFERENCE_LAT,
     ISS_REFERENCE_LNG,
 )
@@ -254,7 +255,7 @@ class AnalyticsService:
                 "reference_point": {
                     "latitude": reference_lat,
                     "longitude": reference_lng,
-                    "label": "NYC (default)",
+                    "label": ISS_REFERENCE_LABEL,
                 },
                 "distance_km": round(distance_km, 2),
                 "near_reference": distance_km <= near_threshold_km,

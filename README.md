@@ -99,7 +99,7 @@ curl http://localhost:8000/analytics/summary
 |--------|----------|-----------|---------|
 | Trivia | [Open Trivia DB](https://opentdb.com/) | 1 hour | 10 multiple-choice questions |
 | ISS | [Open Notify](http://open-notify.org/Open-Notify-API/ISS-Location-Now/) | 5 min | Live lat/lng |
-| Weather | [Open-Meteo](https://open-meteo.com/) | 30 min | New York City forecast |
+| Weather | [Open-Meteo](https://open-meteo.com/) | 1 hour | Anekal, Bengaluru forecast |
 
 The SQLite database is created automatically at `data/hub.db` on first run.
 
@@ -234,7 +234,7 @@ Edit `app/config.py` to change:
 
 - **Cache TTLs** — `CACHE_TTL` (seconds per source)
 - **Upstream URLs** — trivia, ISS, weather endpoints
-- **Weather location** — lat/lng in `WEATHER_API_URL` (default: NYC)
+- **Weather location** — lat/lng in `WEATHER_API_URL` (default: Anekal, Bengaluru, Karnataka, India)
 
 ---
 

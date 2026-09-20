@@ -18,6 +18,7 @@ config.DATABASE_PATH = TEST_DB
 
 from app.db.database import init_db, is_cache_valid  # noqa: E402
 from app.main import app  # noqa: E402
+from app.utils import rate_limit  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -25,9 +26,11 @@ def fresh_db():
     if TEST_DB.exists():
         TEST_DB.unlink()
     init_db()
+    rate_limit._last_upstream_fetch.clear()
     yield
     if TEST_DB.exists():
         TEST_DB.unlink()
+    rate_limit._last_upstream_fetch.clear()
 
 
 @pytest_asyncio.fixture
@@ -103,9 +106,9 @@ async def test_weather_nws_fallback_when_open_meteo_fails(client, monkeypatch):
     from app.services.weather_service import WeatherService
 
     nws_payload = {
-        "location": "New York City",
-        "latitude": 40.7128,
-        "longitude": -74.006,
+        "location": "Anekal, Bengaluru, Karnataka, India",
+        "latitude": 12.7081,
+        "longitude": 77.6953,
         "upstream": "nws",
         "current": {
             "temperature_c": 17.2,
@@ -134,6 +137,10 @@ async def test_weather_nws_fallback_when_open_meteo_fails(client, monkeypatch):
         "fetch_remote_nws",
         AsyncMock(return_value=nws_payload),
     )
+    monkeypatch.setattr(
+        "app.services.weather_service.is_us_coordinates",
+        lambda _lat, _lng: True,
+    )
 
     response = await client.post("/weather/refresh")
     assert response.status_code == 200
@@ -144,10 +151,34 @@ async def test_weather_nws_fallback_when_open_meteo_fails(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_weather_skips_nws_outside_us_when_open_meteo_fails(client, monkeypatch):
+    from app.services.weather_service import WeatherService
+
+    async def fail_open_meteo(_self):
+        request = httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")
+        response = httpx.Response(429, request=request)
+        raise httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+    monkeypatch.setattr(WeatherService, "fetch_remote", fail_open_meteo)
+    monkeypatch.setattr(
+        "app.services.weather_service.is_us_coordinates",
+        lambda _lat, _lng: False,
+    )
+
+    response = await client.post("/weather/refresh")
+    assert response.status_code == 429
+    body = response.json()
+    assert "NWS fallback is US-only" in body["detail"]
+
+
+@pytest.mark.asyncio
 async def test_analytics_summary(client):
-    await client.post("/trivia/refresh")
-    await client.post("/iss/refresh")
-    await client.post("/weather/refresh")
+    trivia = await client.post("/trivia/refresh")
+    iss = await client.post("/iss/refresh")
+    weather = await client.post("/weather/refresh")
+    assert trivia.status_code == 200
+    assert iss.status_code == 200
+    assert weather.status_code == 200
 
     response = await client.get("/analytics/summary")
     assert response.status_code == 200
@@ -171,8 +202,10 @@ async def test_daily_brief(client):
     body = response.json()
     assert "generated_at" in body
     assert body["weather"] is not None
+    assert body["weather"]["location"] == "Anekal, Bengaluru, Karnataka, India"
     assert body["iss"] is not None
     assert "distance_km" in body["iss"]
+    assert body["iss"]["reference_point"]["label"] == "Anekal, Bengaluru (default)"
     assert "near_reference" in body["iss"]
     assert body["trivia"] is not None
     assert "question" in body["trivia"]

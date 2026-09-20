@@ -9,12 +9,12 @@ import httpx
 from app.config import (
     CACHE_TTL,
     DEFAULT_WEATHER_LOCATION,
-    NWS_POINTS_URL,
     NWS_USER_AGENT,
     WEATHER_API_URL,
     WEATHER_LATITUDE,
     WEATHER_LONGITUDE,
 )
+from app.utils.geo import is_us_coordinates, nws_points_url
 from app.db.database import (
     get_connection,
     get_latest_cache_entry,
@@ -137,7 +137,11 @@ class WeatherService:
         }
 
     async def fetch_remote_nws(self) -> dict:
-        points = await get_json(NWS_POINTS_URL, headers=NWS_HEADERS, retries=2)
+        points = await get_json(
+            nws_points_url(WEATHER_LATITUDE, WEATHER_LONGITUDE),
+            headers=NWS_HEADERS,
+            retries=2,
+        )
         properties = points.get("properties", {})
         forecast_url = properties.get("forecast")
         stations_url = properties.get("observationStations")
@@ -187,8 +191,24 @@ class WeatherService:
         }
 
     async def _try_nws_fallback(self, open_meteo_error: Exception) -> dict:
+        if not is_us_coordinates(WEATHER_LATITUDE, WEATHER_LONGITUDE):
+            logger.warning(
+                "Open-Meteo failed (%s); NWS fallback skipped (non-US coordinates)",
+                open_meteo_error,
+            )
+            if (
+                isinstance(open_meteo_error, httpx.HTTPStatusError)
+                and open_meteo_error.response.status_code == 429
+            ):
+                raise UpstreamRateLimitedError(
+                    self.source,
+                    "Open-Meteo rate limit reached. NWS fallback is US-only; "
+                    "retry later or use cached data when available.",
+                ) from open_meteo_error
+            raise open_meteo_error
+
         logger.warning(
-            "Open-Meteo failed (%s); trying NWS fallback for NYC",
+            "Open-Meteo failed (%s); trying NWS fallback for US coordinates",
             open_meteo_error,
         )
         try:

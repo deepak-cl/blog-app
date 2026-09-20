@@ -17,25 +17,27 @@ CACHE_TTL = {
 TRIVIA_API_URL = "https://opentdb.com/api.php?amount=10&type=multiple"
 ISS_API_URL = "https://api.wheretheiss.at/v1/satellites/25544"
 ISS_API_URL_FALLBACK = "http://api.open-notify.org/iss-now.json"
+WEATHER_LATITUDE = 12.7081
+WEATHER_LONGITUDE = 77.6953
+WEATHER_TIMEZONE = "Asia/Kolkata"
+
 WEATHER_API_URL = (
     "https://api.open-meteo.com/v1/forecast"
-    "?latitude=40.7128&longitude=-74.0060"
+    f"?latitude={WEATHER_LATITUDE}&longitude={WEATHER_LONGITUDE}"
     "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m"
     "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum"
-    "&timezone=America/New_York&forecast_days=7"
+    f"&timezone={WEATHER_TIMEZONE}&forecast_days=7"
 )
 
-# NWS fallback when Open-Meteo is rate-limited (common on shared Render IPs)
-NWS_POINTS_URL = "https://api.weather.gov/points/40.7128,-74.0060"
+# NWS fallback (US coordinates only) when Open-Meteo is rate-limited
 NWS_USER_AGENT = "PersonalAPIHub/1.0 (https://github.com/deepak-cl/blog-app)"
 
-DEFAULT_WEATHER_LOCATION = "New York City"
-WEATHER_LATITUDE = 40.7128
-WEATHER_LONGITUDE = -74.0060
+DEFAULT_WEATHER_LOCATION = "Anekal, Bengaluru, Karnataka, India"
 
-# ISS proximity reference (default NYC)
-ISS_REFERENCE_LAT = 40.7128
-ISS_REFERENCE_LNG = -74.0060
+# ISS proximity reference (default: Anekal, Bengaluru)
+ISS_REFERENCE_LAT = WEATHER_LATITUDE
+ISS_REFERENCE_LNG = WEATHER_LONGITUDE
+ISS_REFERENCE_LABEL = "Anekal, Bengaluru (default)"
 ISS_NEAR_THRESHOLD_KM = 2000.0
 
 # Background scheduler (disabled during pytest)

@@ -40,7 +40,7 @@ async function loadDailyBrief() {
         ${
           iss
             ? `<p>Lat ${fmt(iss.latitude)} · Lng ${fmt(iss.longitude)}</p>
-               <p>Distance to NYC: ${fmt(iss.distance_km)} km</p>
+               <p>Distance to ${fmt(iss.reference_point?.label, "reference")}: ${fmt(iss.distance_km)} km</p>
                <p><span class="badge ${iss.near_reference ? "ok" : "warn"}">${iss.near_reference ? "Near reference" : "Far from reference"}</span></p>`
             : "<p class='muted'>No ISS cached</p>"
         }
