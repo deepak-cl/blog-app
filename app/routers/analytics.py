@@ -7,7 +7,7 @@ from app.services.ai_brief_service import AIBriefNotConfiguredError, AIBriefServ
 from app.services.weather_service import WeatherService
 from app.utils.errors import friendly_http_error
 from app.services.analytics_service import AnalyticsService
-from app.utils.geo import format_coords_label
+from app.services.reverse_geocode_service import resolve_place_label
 from app.utils.geo_params import optional_india_coords
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -54,11 +54,12 @@ async def daily_brief(
         ref_lat, ref_lng = coords
         kwargs["reference_lat"] = ref_lat
         kwargs["reference_lng"] = ref_lng
-        kwargs["reference_label"] = format_coords_label(ref_lat, ref_lng)
+        place_label = await resolve_place_label(ref_lat, ref_lng)
+        kwargs["reference_label"] = place_label
         weather_service = WeatherService(
             latitude=ref_lat,
             longitude=ref_lng,
-            location_label=kwargs["reference_label"],
+            location_label=place_label,
         )
         await weather_service.get_or_refresh(force=False)
     else:

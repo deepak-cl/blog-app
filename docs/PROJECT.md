@@ -28,7 +28,8 @@ No API keys required. No external database server required.
 | Trivia feed | Done | Open Trivia DB, 10 MCQ, 1h TTL |
 | ISS location | Done | Open Notify, 5min TTL, position history |
 | Weather feed | Done | Open-Meteo + fallback chain; default Anekal/Bengaluru; optional `?lat=&lng=` (India only) |
-| Geo-based dashboard | Done | Browser geolocation → India bounds → weather/ISS/daily-brief; fallback to Anekal |
+| Geo-based dashboard | Done | Browser geolocation → India bounds → reverse geocode place name → weather/ISS/daily-brief |
+| Reverse geocode | Done | `GET /geo/reverse?lat=&lng=` — Open-Meteo + BigDataCloud fallback, 1h in-memory cache |
 | Prometheus metrics | Done | `GET /metrics` — request counts, cache hit/miss, last fetch timestamps (admin only) |
 | SQLite caching | Done | Auto-created at `data/hub.db`; optional `fetch_duration_ms` |
 | Background scheduler | Done | APScheduler refreshes all sources on TTL intervals |
@@ -93,6 +94,7 @@ routers services analytics
 | Analytics | `app/services/analytics_service.py` | Aggregations over cached data |
 | Database | `app/db/database.py` | SQLite schema, cache CRUD, ISS position history |
 | Utils | `app/utils/geo.py` | India bounds, Haversine, dynamic Open-Meteo/wttr URLs |
+| Geo services | `app/services/reverse_geocode_service.py` | India reverse geocoding with in-memory cache |
 | Metrics | `app/metrics.py` | Prometheus text format + request middleware |
 | Static UI | `static/` | Dashboard HTML/CSS/JS served at `/` |
 
@@ -106,7 +108,7 @@ routers services analytics
 │   ├── main.py
 │   ├── config.py
 │   ├── db/database.py
-│   ├── routers/          # health, trivia, iss, weather, news, ai-dev, entertainment, analytics
+│   ├── routers/          # health, geo, trivia, iss, weather, news, ai-dev, entertainment, analytics
 │   ├── services/         # *_service modules + rss_aggregator
 │   └── utils/geo.py
 ├── static/                   # Web dashboard (served at /)
@@ -192,8 +194,16 @@ When Open-Meteo is rate-limited **with no cache**, the service tries [api.weathe
 ## 8. API endpoints
 
 ### Root / UI
-- `GET /` — web dashboard (static HTML)
+- `GET /` — web dashboard (static HTML); header tagline: **Your daily pulse — weather, space, news & more**
 - `GET /api` — JSON service index
+
+### Geo
+- `GET /geo/reverse?lat=&lng=` — reverse geocode India coordinates to `{ label, city, state, country }`
+  - Primary: [Open-Meteo Geocoding API](https://open-meteo.com/en/docs/geocoding-api) (no API key)
+  - Fallback: BigDataCloud free client endpoint
+  - In-memory cache (~1h TTL, keyed by coords rounded to 0.01°)
+  - Geocode failure fallback: rounded coords or **Near Bengaluru** when within ~80 km of default
+  - Outside India → HTTP **403** (`outside_india`)
 
 ### Health
 - `GET /health` — always HTTP 200; `status`: `healthy` or `degraded`
@@ -205,7 +215,7 @@ Each of `/trivia`, `/iss`, `/weather`, `/news`, `/ai-dev`, `/entertainment` supp
 - `lat` and `lng` must be supplied together
 - Valid range: lat `6.5–35.5`, lng `68–97.5` (approximate India bounding box)
 - Outside India → HTTP **403** with `{ "error": "outside_india", "message": "..." }`
-- Dashboard requests browser geolocation on load; denied/unavailable → Anekal default with UI notice
+- Dashboard requests browser geolocation on load, calls `/geo/reverse` for a place name, then loads geo-aware cards; denied/unavailable → Anekal default with UI notice
 
 ### Observability (admin — not linked from dashboard)
 | Endpoint | Purpose |
@@ -238,7 +248,7 @@ Dashboard: http://localhost:8000/
 
 ### AI Daily Brief (optional)
 
-Summarizes cached weather, ISS, and trivia for **Anekal, Bengaluru** using a configured LLM provider. Uses small models to keep token usage low.
+Summarizes cached weather, ISS, trivia, **world news**, **entertainment**, and **AI developments** for the user's location (or **Anekal, Bengaluru** by default) using a configured LLM provider. Uses small models to keep token usage low (max 150 output tokens).
 
 | Provider | Env var(s) | Default model |
 |----------|------------|---------------|
@@ -252,6 +262,7 @@ If no keys are set, `GET/POST /analytics/ai-brief` returns HTTP **503** with set
 
 ### Dashboard UI
 
+- **Header:** resolved place name (reverse geocoded) + tagline *Your daily pulse — weather, space, news & more*
 - **Theme:** light/dark toggle (sun/moon) persisted in `localStorage` (`pah-theme`); defaults to `prefers-color-scheme`
 - **Cards:** Weather, ISS, Trivia — skeleton loaders, per-card refresh (`POST /{source}/refresh`), hover transitions
 - **AI Daily Brief:** provider dropdown + Generate button with animated loading state
@@ -384,6 +395,7 @@ Follow this checklist when the user requests a new data source, endpoint, or ana
 10. Dashboard revamp: light/dark theme, interactive cards, AI Daily Brief; cache/SSE hidden from UI
 11. RSS headlines: world news, AI developments, entertainment + dashboard cards + news-brief analytics
 12. Geo-based weather/ISS (India bounding box), browser geolocation on dashboard, `/metrics` Prometheus endpoint
+13. Reverse geocode place names (`GET /geo/reverse`), dashboard tagline refresh, AI brief weaves news + entertainment + AI dev headlines
 
 ---
 

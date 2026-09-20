@@ -16,6 +16,7 @@ from app.routers import (
     analytics,
     entertainment,
     events,
+    geo,
     health,
     iss,
     metrics,
@@ -118,6 +119,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 app.include_router(metrics.router)
+app.include_router(geo.router)
 app.include_router(health.router)
 app.include_router(trivia.router)
 app.include_router(iss.router)
@@ -136,6 +138,7 @@ def api_index():
         "docs": "/docs",
         "dashboard": "/",
         "endpoints": {
+            "geo_reverse": "/geo/reverse",
             "health": "/health",
             "trivia": "/trivia",
             "iss": "/iss",

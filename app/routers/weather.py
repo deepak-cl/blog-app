@@ -3,22 +3,23 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services.weather_service import WeatherService
-from app.utils.geo import format_coords_label
+from app.services.reverse_geocode_service import resolve_place_label
 from app.utils.geo_params import optional_india_coords
 
 router = APIRouter(prefix="/weather", tags=["weather"])
 
 
-def _weather_service(
+async def _weather_service(
     coords: tuple[float, float] | None,
 ) -> WeatherService:
     if coords is None:
         return WeatherService()
     lat, lng = coords
+    location_label = await resolve_place_label(lat, lng)
     return WeatherService(
         latitude=lat,
         longitude=lng,
-        location_label=format_coords_label(lat, lng),
+        location_label=location_label,
     )
 
 
@@ -30,7 +31,7 @@ async def get_weather(
 ):
     """Return weather for Anekal/Bengaluru or optional India lat/lng."""
     coords = optional_india_coords(lat, lng)
-    service = _weather_service(coords)
+    service = await _weather_service(coords)
     return await service.get_or_refresh(force=refresh)
 
 
@@ -41,18 +42,18 @@ async def refresh_weather(
 ):
     """Force refresh weather (Open-Meteo primary; fallback chain when needed)."""
     coords = optional_india_coords(lat, lng)
-    service = _weather_service(coords)
+    service = await _weather_service(coords)
     return await service.get_or_refresh(force=True)
 
 
 @router.get("/cached")
-def get_cached_weather(
+async def get_cached_weather(
     lat: float | None = Query(default=None, ge=-90, le=90),
     lng: float | None = Query(default=None, ge=-180, le=180),
 ):
     """Return the latest cached weather payload."""
     coords = optional_india_coords(lat, lng)
-    service = _weather_service(coords)
+    service = await _weather_service(coords)
     cached = service.get_cached()
     if cached is None:
         raise HTTPException(status_code=404, detail="No weather data cached yet")

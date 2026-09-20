@@ -6,10 +6,9 @@ from typing import Any
 
 import httpx
 
-from app.config import DEFAULT_WEATHER_LOCATION
 from app.services.analytics_service import AnalyticsService
+from app.services.reverse_geocode_service import resolve_place_label
 from app.services.weather_service import WeatherService
-from app.utils.geo import format_coords_label
 
 PROVIDER_CONFIG: dict[str, dict[str, Any]] = {
     "openai": {
@@ -57,6 +56,18 @@ class AIBriefService:
             if self._resolve_api_key(provider_id)
         ]
 
+    def _headline_fact(self, snapshot: dict | None, label: str) -> str:
+        if not snapshot:
+            return f"{label}: not cached."
+        headlines = snapshot.get("top_headlines") or []
+        if not headlines:
+            return f"{label}: not cached."
+        items = [
+            f"\"{row.get('title')}\" ({row.get('source', 'unknown')})"
+            for row in headlines[:3]
+        ]
+        return f"{label}: " + "; ".join(items)
+
     def _build_prompt(self, brief: dict, *, location_label: str | None = None) -> str:
         weather = brief.get("weather") or {}
         iss = brief.get("iss") or {}
@@ -99,14 +110,21 @@ class AIBriefService:
         else:
             facts.append("Trivia: not cached.")
 
+        facts.append(self._headline_fact(brief.get("news"), "World news"))
+        facts.append(self._headline_fact(brief.get("entertainment"), "Entertainment"))
+        facts.append(self._headline_fact(brief.get("ai_dev"), "AI developments"))
+
         if brief.get("notes"):
             facts.append("Notes: " + " ".join(brief["notes"]))
 
         return (
             f"Write a friendly 2-3 sentence daily brief for someone in "
-            f"{resolved_location}. Use only these facts:\n\n"
+            f"{resolved_location}. Weave together local weather, ISS proximity, "
+            f"world news, entertainment headlines, and AI developments using only "
+            f"these facts:\n\n"
             + "\n".join(f"- {line}" for line in facts)
-            + "\n\nKeep it warm, concise, and practical. Do not invent details."
+            + "\n\nKeep it warm, concise, and practical. Do not invent details "
+            "beyond these headlines."
         )
 
     async def _call_openai(self, api_key: str, prompt: str, model: str) -> str:
@@ -200,7 +218,7 @@ class AIBriefService:
         location_label = DEFAULT_WEATHER_LOCATION
         if coords is not None:
             ref_lat, ref_lng = coords
-            location_label = format_coords_label(ref_lat, ref_lng)
+            location_label = await resolve_place_label(ref_lat, ref_lng)
             brief_kwargs = {
                 "reference_lat": ref_lat,
                 "reference_lng": ref_lng,

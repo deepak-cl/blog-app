@@ -13,6 +13,7 @@ const outsideIndiaModal = document.getElementById("outside-india-modal");
 
 const HEADLINE_SOURCES = new Set(["news", "ai-dev", "entertainment"]);
 
+const HUB_TAGLINE = "Your daily pulse — weather, space, news & more";
 const DEFAULT_LAT = 12.7081;
 const DEFAULT_LNG = 77.6953;
 const DEFAULT_LABEL = "Anekal, Bengaluru";
@@ -66,10 +67,25 @@ function setGeoBanner(message, { notice = false } = {}) {
 
 function updateLocationSubtitle() {
   if (userLocation.outsideIndia) {
-    locationSubtitle.textContent = "India-only weather & ISS · Fetch · Cache · Analyze";
+    locationSubtitle.textContent = `${HUB_TAGLINE} · India-only weather & ISS`;
     return;
   }
-  locationSubtitle.textContent = `${userLocation.label} · Fetch · Cache · Analyze`;
+  locationSubtitle.textContent = `${userLocation.label} · ${HUB_TAGLINE}`;
+}
+
+async function resolvePlaceLabel(lat, lng) {
+  try {
+    const res = await fetch(
+      `/geo/reverse?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`
+    );
+    if (!res.ok) {
+      return `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`;
+    }
+    const data = await res.json();
+    return data.label || `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`;
+  } catch (_) {
+    return `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`;
+  }
 }
 
 function showOutsideIndiaModal() {
@@ -185,7 +201,7 @@ function renderWeather(weather) {
   }
 
   weatherEl.innerHTML = `
-    <p class="location-label">${fmt(weather.location)}</p>
+    <p class="location-label">${fmt(userLocation.outsideIndia ? weather.location : userLocation.label)}</p>
     <p class="stat-highlight">${fmt(weather.current?.condition)} · ${fmt(weather.current?.temperature_c)}°C</p>
     <p class="detail-row">Today: high ${fmt(weather.today?.high_c)}°C / low ${fmt(weather.today?.low_c)}°C</p>
     <p class="meta-row">Cached ${new Date(weather.cached_at).toLocaleString()}</p>
@@ -438,7 +454,7 @@ function requestUserLocation() {
 
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const { latitude, longitude } = position.coords;
         if (!isIndiaCoordinates(latitude, longitude)) {
           userLocation = {
@@ -455,10 +471,11 @@ function requestUserLocation() {
           return;
         }
 
+        const placeLabel = await resolvePlaceLabel(latitude, longitude);
         userLocation = {
           lat: latitude,
           lng: longitude,
-          label: `Your location (${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°)`,
+          label: placeLabel,
           source: "geolocation",
           outsideIndia: false,
         };

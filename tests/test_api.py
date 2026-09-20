@@ -18,7 +18,35 @@ config.DATABASE_PATH = TEST_DB
 
 from app.db.database import init_db, is_cache_valid  # noqa: E402
 from app.main import app  # noqa: E402
+from app.services.reverse_geocode_service import clear_reverse_geocode_cache  # noqa: E402
 from app.utils import rate_limit  # noqa: E402
+
+
+async def _fake_reverse_lookup(_self, lat: float, lng: float) -> dict:
+    return {
+        "label": f"Resolved ({lat:.2f}°, {lng:.2f}°)",
+        "city": "Resolved",
+        "state": "Karnataka",
+        "country": "India",
+        "from_cache": False,
+        "provider": "test",
+    }
+
+
+async def _fake_resolve_place_label(lat: float, lng: float) -> str:
+    return f"Resolved ({lat:.2f}°, {lng:.2f}°)"
+
+
+@pytest.fixture(autouse=True)
+def mock_reverse_geocode(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.reverse_geocode_service.ReverseGeocodeService.lookup",
+        _fake_reverse_lookup,
+    )
+    monkeypatch.setattr(
+        "app.services.reverse_geocode_service.resolve_place_label",
+        _fake_resolve_place_label,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -27,10 +55,12 @@ def fresh_db():
         TEST_DB.unlink()
     init_db()
     rate_limit._last_upstream_fetch.clear()
+    clear_reverse_geocode_cache()
     yield
     if TEST_DB.exists():
         TEST_DB.unlink()
     rate_limit._last_upstream_fetch.clear()
+    clear_reverse_geocode_cache()
 
 
 @pytest_asyncio.fixture
@@ -461,7 +491,7 @@ async def test_weather_with_custom_india_coords(client, monkeypatch):
     from app.services.weather_service import WeatherService
 
     custom_payload = {
-        "location": "Your location (19.08°, 72.88°)",
+        "location": "Resolved (19.08°, 72.88°)",
         "latitude": 19.076,
         "longitude": 72.8777,
         "upstream": "open-meteo",
@@ -491,7 +521,7 @@ async def test_weather_with_custom_india_coords(client, monkeypatch):
     body = response.json()
     assert body["data"]["latitude"] == 19.076
     assert body["data"]["longitude"] == 72.8777
-    assert "Your location" in body["data"]["location"]
+    assert "Resolved" in body["data"]["location"]
 
 
 @pytest.mark.asyncio
@@ -518,7 +548,7 @@ async def test_iss_with_custom_reference_coords(client, monkeypatch):
     assert body["data"]["latitude"] == 10.0
     assert "distance_km" in body
     assert body["reference_point"]["latitude"] == 12.7081
-    assert "Your location" in body["reference_point"]["label"]
+    assert "Resolved" in body["reference_point"]["label"]
 
 
 @pytest.mark.asyncio
@@ -527,7 +557,7 @@ async def test_daily_brief_with_custom_coords(client, monkeypatch):
     from app.services.weather_service import WeatherService
 
     weather_payload = {
-        "location": "Your location (13.08°, 80.27°)",
+        "location": "Resolved (13.08°, 80.27°)",
         "latitude": 13.0827,
         "longitude": 80.2707,
         "upstream": "open-meteo",
@@ -564,7 +594,7 @@ async def test_daily_brief_with_custom_coords(client, monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["iss"]["reference_point"]["latitude"] == 13.0827
-    assert "Your location" in body["iss"]["reference_point"]["label"]
+    assert "Resolved" in body["iss"]["reference_point"]["label"]
     assert body["weather"] is not None
 
 
@@ -590,6 +620,7 @@ async def test_api_index(client):
     assert "ai_brief" in body["endpoints"]
     assert "news" in body["endpoints"]
     assert "entertainment" in body["endpoints"]
+    assert "geo_reverse" in body["endpoints"]
 
 
 MOCK_HEADLINES = {
@@ -679,3 +710,116 @@ async def test_news_brief_and_daily_brief_headlines(client, monkeypatch):
     assert daily_body["news"] is not None
     assert daily_body["ai_dev"] is not None
     assert daily_body["entertainment"] is not None
+
+
+@pytest.mark.asyncio
+async def test_geo_reverse_india(client):
+    response = await client.get("/geo/reverse?lat=12.7081&lng=77.6953")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["label"] == "Resolved (12.71°, 77.70°)"
+    assert body["country"] == "India"
+    assert body["city"] == "Resolved"
+
+
+@pytest.mark.asyncio
+async def test_geo_reverse_outside_india(client):
+    response = await client.get("/geo/reverse?lat=40.7128&lng=-74.0060")
+    assert response.status_code == 403
+    assert response.json()["error"] == "outside_india"
+
+
+@pytest.mark.asyncio
+async def test_geo_reverse_requires_both_coords(client):
+    response = await client.get("/geo/reverse?lat=12.7")
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_reverse_geocode_open_meteo_parsing(monkeypatch):
+    from app.services.reverse_geocode_service import ReverseGeocodeService
+
+    async def fake_get(*_args, **_kwargs):
+        request = _args[1] if len(_args) > 1 else _kwargs.get("url", "")
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "results": [
+                        {
+                            "name": "Anekal",
+                            "admin1": "Karnataka",
+                            "country": "India",
+                            "country_code": "IN",
+                        }
+                    ]
+                }
+
+        return FakeResponse()
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return None
+
+        get = fake_get
+
+    monkeypatch.setattr("app.services.reverse_geocode_service.httpx.AsyncClient", lambda **_kw: FakeClient())
+
+    service = ReverseGeocodeService()
+    result = await service._fetch_open_meteo(12.7081, 77.6953)
+    assert result["label"] == "Anekal, Karnataka, India"
+    assert result["provider"] == "open-meteo"
+
+
+def test_ai_brief_prompt_includes_headlines():
+    from app.services.ai_brief_service import AIBriefService
+
+    brief = {
+        "weather": {
+            "location": "Anekal, Karnataka, India",
+            "current": {"condition": "Clear", "temperature_c": 28},
+            "today": {"high_c": 32, "low_c": 22},
+        },
+        "iss": {
+            "latitude": 10.0,
+            "longitude": 60.0,
+            "distance_km": 1500,
+            "near_reference": False,
+            "reference_point": {"label": "Anekal, Karnataka, India"},
+        },
+        "trivia": {
+            "question": "What is Python?",
+            "category": "Science",
+            "difficulty": "easy",
+        },
+        "news": {
+            "top_headlines": [
+                {"title": "World headline one", "source": "BBC"},
+                {"title": "World headline two", "source": "NPR"},
+            ]
+        },
+        "entertainment": {
+            "top_headlines": [
+                {"title": "Movie premiere tonight", "source": "Variety"},
+            ]
+        },
+        "ai_dev": {
+            "top_headlines": [
+                {"title": "New model released", "source": "OpenAI"},
+            ]
+        },
+    }
+
+    prompt = AIBriefService()._build_prompt(brief)
+    assert "World news:" in prompt
+    assert "World headline one" in prompt
+    assert "Entertainment:" in prompt
+    assert "Movie premiere tonight" in prompt
+    assert "AI developments:" in prompt
+    assert "New model released" in prompt
+    assert "world news, entertainment headlines, and AI developments" in prompt

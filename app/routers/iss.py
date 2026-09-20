@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from app.config import ISS_NEAR_THRESHOLD_KM, ISS_REFERENCE_LABEL, ISS_REFERENCE_LAT, ISS_REFERENCE_LNG
+from app.config import ISS_NEAR_THRESHOLD_KM
 from app.services.iss_service import ISSService
-from app.utils.geo import format_coords_label, haversine_km
+from app.services.reverse_geocode_service import resolve_place_label
+from app.utils.geo import haversine_km
 from app.utils.geo_params import optional_india_coords
 
 router = APIRouter(prefix="/iss", tags=["iss"])
@@ -42,6 +43,15 @@ def _enrich_with_reference(
     return payload
 
 
+async def _reference_label(
+    coords: tuple[float, float] | None,
+) -> tuple[float, float, str] | None:
+    if coords is None:
+        return None
+    ref_lat, ref_lng = coords
+    return ref_lat, ref_lng, await resolve_place_label(ref_lat, ref_lng)
+
+
 @router.get("")
 async def get_iss(
     refresh: bool = False,
@@ -51,13 +61,14 @@ async def get_iss(
     """Return current ISS position; optional lat/lng sets the distance reference point."""
     coords = optional_india_coords(lat, lng)
     result = await service.get_or_refresh(force=refresh)
-    if coords is not None:
-        ref_lat, ref_lng = coords
+    reference = await _reference_label(coords)
+    if reference is not None:
+        ref_lat, ref_lng, reference_label = reference
         result = _enrich_with_reference(
             result,
             reference_lat=ref_lat,
             reference_lng=ref_lng,
-            reference_label=format_coords_label(ref_lat, ref_lng),
+            reference_label=reference_label,
         )
     return result
 
@@ -70,19 +81,20 @@ async def refresh_iss(
     """Force refresh ISS position from upstream providers."""
     coords = optional_india_coords(lat, lng)
     result = await service.get_or_refresh(force=True)
-    if coords is not None:
-        ref_lat, ref_lng = coords
+    reference = await _reference_label(coords)
+    if reference is not None:
+        ref_lat, ref_lng, reference_label = reference
         result = _enrich_with_reference(
             result,
             reference_lat=ref_lat,
             reference_lng=ref_lng,
-            reference_label=format_coords_label(ref_lat, ref_lng),
+            reference_label=reference_label,
         )
     return result
 
 
 @router.get("/cached")
-def get_cached_iss(
+async def get_cached_iss(
     lat: float | None = None,
     lng: float | None = None,
 ):
@@ -91,12 +103,13 @@ def get_cached_iss(
     cached = service.get_cached()
     if cached is None:
         raise HTTPException(status_code=404, detail="No ISS data cached yet")
-    if coords is not None:
-        ref_lat, ref_lng = coords
+    reference = await _reference_label(coords)
+    if reference is not None:
+        ref_lat, ref_lng, reference_label = reference
         cached = _enrich_with_reference(
             cached,
             reference_lat=ref_lat,
             reference_lng=ref_lng,
-            reference_label=format_coords_label(ref_lat, ref_lng),
+            reference_label=reference_label,
         )
     return cached
