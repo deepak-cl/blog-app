@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query
 
+from app.services.ai_brief_service import AIBriefNotConfiguredError, AIBriefService
 from app.services.analytics_service import AnalyticsService
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 service = AnalyticsService()
+ai_brief_service = AIBriefService()
 
 
 @router.get("/summary")
@@ -53,3 +55,34 @@ def daily_brief(
 def cache_efficiency():
     """Per-source cache efficiency and hit-friendly status."""
     return service.cache_efficiency()
+
+
+@router.get("/ai-brief/providers")
+def ai_brief_providers():
+    """List AI providers that have API keys configured on the server."""
+    return {"providers": ai_brief_service.configured_providers()}
+
+
+@router.get("/ai-brief")
+async def ai_brief_get(provider: str | None = Query(default=None)):
+    """Generate a short AI daily brief from cached hub data."""
+    return await _generate_ai_brief(provider)
+
+
+@router.post("/ai-brief")
+async def ai_brief_post(provider: str | None = Query(default=None)):
+    """Generate a short AI daily brief from cached hub data."""
+    return await _generate_ai_brief(provider)
+
+
+async def _generate_ai_brief(provider: str | None) -> dict:
+    try:
+        return await ai_brief_service.generate(provider=provider)
+    except AIBriefNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+            headers={"X-AI-Brief-Status": "not-configured"},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

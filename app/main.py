@@ -106,6 +106,8 @@ def api_index():
             "weather": "/weather",
             "analytics": "/analytics/summary",
             "daily_brief": "/analytics/daily-brief",
+            "ai_brief": "/analytics/ai-brief",
+            "ai_brief_providers": "/analytics/ai-brief/providers",
             "cache_efficiency": "/analytics/cache-efficiency",
             "events_stream": "/events/stream",
         },

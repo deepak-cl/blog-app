@@ -233,9 +233,43 @@ async def test_cache_efficiency(client):
 
 
 @pytest.mark.asyncio
+async def test_ai_brief_providers_empty(client, monkeypatch):
+    for env_var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(env_var, raising=False)
+
+    response = await client.get("/analytics/ai-brief/providers")
+    assert response.status_code == 200
+    assert response.json()["providers"] == []
+
+
+@pytest.mark.asyncio
+async def test_ai_brief_no_key_configured(client, monkeypatch):
+    for env_var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(env_var, raising=False)
+
+    response = await client.post("/analytics/ai-brief")
+    assert response.status_code == 503
+    body = response.json()
+    assert "No AI provider API keys configured" in body["detail"]
+
+
+@pytest.mark.asyncio
+async def test_ai_brief_missing_provider_key(client, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    response = await client.post("/analytics/ai-brief?provider=anthropic")
+    assert response.status_code == 503
+    assert "anthropic" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_api_index(client):
     response = await client.get("/api")
     assert response.status_code == 200
     body = response.json()
     assert body["name"] == "Personal API Hub"
     assert "daily_brief" in body["endpoints"]
+    assert "ai_brief" in body["endpoints"]

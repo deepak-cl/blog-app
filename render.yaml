@@ -9,3 +9,10 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.0"
+      # Optional — enable AI Daily Brief on the dashboard (set at least one)
+      # - key: OPENAI_API_KEY
+      #   sync: false
+      # - key: ANTHROPIC_API_KEY
+      #   sync: false
+      # - key: GEMINI_API_KEY
+      #   sync: false

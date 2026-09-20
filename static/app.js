@@ -1,130 +1,234 @@
-const briefEl = document.getElementById("brief-content");
-const cacheEl = document.getElementById("cache-content");
-const feedEl = document.getElementById("feed-content");
-const sseStatus = document.getElementById("sse-status");
+const weatherEl = document.getElementById("weather-content");
+const issEl = document.getElementById("iss-content");
+const triviaEl = document.getElementById("trivia-content");
+const aiBriefEl = document.getElementById("ai-brief-content");
+const aiProviderSelect = document.getElementById("ai-provider");
+const generateAiBtn = document.getElementById("generate-ai-brief");
 const lastUpdated = document.getElementById("last-updated");
+const themeToggle = document.getElementById("theme-toggle");
+
+let briefCache = null;
 
 function fmt(value, fallback = "—") {
   return value === null || value === undefined ? fallback : value;
 }
 
-function badgeClass(status) {
-  if (status === "hit_friendly" || status === "optimal") return "ok";
-  if (status === "stale_serves_fallback" || status === "partial") return "warn";
-  return "bad";
+function skeletonMarkup(lines = 3) {
+  const widths = ["wide", "", "short"];
+  return `<div class="skeleton-stack" aria-hidden="true">${Array.from({ length: lines })
+    .map((_, i) => `<div class="skeleton skeleton-line ${widths[i % widths.length]}"></div>`)
+    .join("")}</div>`;
+}
+
+function setLoading(el, message) {
+  el.innerHTML = `${skeletonMarkup()}<p class="sr-only">${message}</p>`;
+}
+
+function setCardRefreshing(source, refreshing) {
+  const card = document.querySelector(`[data-source="${source}"]`);
+  const btn = document.querySelector(`[data-refresh="${source}"]`);
+  if (card) card.classList.toggle("is-refreshing", refreshing);
+  if (btn) btn.disabled = refreshing;
+}
+
+function renderWeather(weather) {
+  if (!weather) {
+    weatherEl.innerHTML = `<p class="empty-state">No weather cached yet. Hit refresh to fetch Anekal/Bengaluru forecast.</p>`;
+    return;
+  }
+
+  weatherEl.innerHTML = `
+    <p class="location-label">${fmt(weather.location)}</p>
+    <p class="stat-highlight">${fmt(weather.current?.condition)} · ${fmt(weather.current?.temperature_c)}°C</p>
+    <p class="detail-row">Today: high ${fmt(weather.today?.high_c)}°C / low ${fmt(weather.today?.low_c)}°C</p>
+    <p class="meta-row">Cached ${new Date(weather.cached_at).toLocaleString()}</p>
+  `;
+}
+
+function renderIss(iss) {
+  if (!iss) {
+    issEl.innerHTML = `<p class="empty-state">No ISS data cached yet. Hit refresh to fetch the latest position.</p>`;
+    return;
+  }
+
+  const nearClass = iss.near_reference ? "ok" : "warn";
+  const nearLabel = iss.near_reference ? "Near reference" : "Far from reference";
+
+  issEl.innerHTML = `
+    <p class="stat-highlight">Lat ${fmt(iss.latitude)} · Lng ${fmt(iss.longitude)}</p>
+    <p class="detail-row">Distance to ${fmt(iss.reference_point?.label, "reference")}: ${fmt(iss.distance_km)} km</p>
+    <p><span class="badge ${nearClass}">${nearLabel}</span></p>
+    <p class="meta-row">Cached ${new Date(iss.cached_at).toLocaleString()}</p>
+  `;
+}
+
+function renderTrivia(trivia) {
+  if (!trivia) {
+    triviaEl.innerHTML = `<p class="empty-state">No trivia cached yet. Hit refresh to pull a new question batch.</p>`;
+    return;
+  }
+
+  triviaEl.innerHTML = `
+    <p class="trivia-question">${trivia.question}</p>
+    <p class="detail-row">${fmt(trivia.category)} · ${fmt(trivia.difficulty)}</p>
+    <p class="meta-row">Cached ${new Date(trivia.cached_at).toLocaleString()}</p>
+  `;
+}
+
+function renderBrief(data) {
+  briefCache = data;
+  renderWeather(data.weather);
+  renderIss(data.iss);
+  renderTrivia(data.trivia);
+  lastUpdated.textContent = `Updated ${new Date(data.generated_at).toLocaleTimeString()}`;
 }
 
 async function loadDailyBrief() {
-  briefEl.innerHTML = '<p class="muted">Loading daily brief…</p>';
-  const res = await fetch("/analytics/daily-brief");
-  const data = await res.json();
+  setLoading(weatherEl, "Loading weather");
+  setLoading(issEl, "Loading ISS");
+  setLoading(triviaEl, "Loading trivia");
 
-  const weather = data.weather;
-  const iss = data.iss;
-  const trivia = data.trivia;
-
-  briefEl.innerHTML = `
-    <div class="brief-grid">
-      <div class="panel">
-        <h3>Weather</h3>
-        ${
-          weather
-            ? `<p><strong>${fmt(weather.location)}</strong></p>
-               <p>${fmt(weather.current?.condition)} · ${fmt(weather.current?.temperature_c)}°C</p>
-               <p>Today: high ${fmt(weather.today?.high_c)}°C / low ${fmt(weather.today?.low_c)}°C</p>`
-            : "<p class='muted'>No weather cached</p>"
-        }
-      </div>
-      <div class="panel">
-        <h3>ISS</h3>
-        ${
-          iss
-            ? `<p>Lat ${fmt(iss.latitude)} · Lng ${fmt(iss.longitude)}</p>
-               <p>Distance to ${fmt(iss.reference_point?.label, "reference")}: ${fmt(iss.distance_km)} km</p>
-               <p><span class="badge ${iss.near_reference ? "ok" : "warn"}">${iss.near_reference ? "Near reference" : "Far from reference"}</span></p>`
-            : "<p class='muted'>No ISS cached</p>"
-        }
-      </div>
-      <div class="panel">
-        <h3>Trivia</h3>
-        ${
-          trivia
-            ? `<p>${trivia.question}</p>
-               <p class="muted">${fmt(trivia.category)} · ${fmt(trivia.difficulty)}</p>`
-            : "<p class='muted'>No trivia cached</p>"
-        }
-      </div>
-    </div>
-    ${data.notes?.length ? `<p class="muted" style="margin-top:0.8rem">${data.notes.join(" ")}</p>` : ""}
-  `;
-}
-
-async function loadCacheEfficiency() {
-  cacheEl.innerHTML = '<p class="muted">Loading cache stats…</p>';
-  const res = await fetch("/analytics/cache-efficiency");
-  const data = await res.json();
-
-  const rows = (data.sources || [])
-    .map(
-      (row) => `
-      <div class="stat-row">
-        <span>${row.source}</span>
-        <span class="badge ${badgeClass(row.hit_friendly_status)}">${row.hit_friendly_status}</span>
-      </div>
-      <div class="stat-row"><span>Entries</span><span>${row.entry_count}</span></div>
-      <div class="stat-row"><span>Age</span><span>${fmt(row.age_seconds, "—")}s / TTL ${row.ttl_seconds}s</span></div>
-      <div class="stat-row"><span>Stale</span><span>${row.is_stale ? "yes" : "no"}</span></div>
-      <hr style="border:none;border-top:1px solid rgba(255,255,255,0.06);margin:0.6rem 0" />
-    `
-    )
-    .join("");
-
-  cacheEl.innerHTML = `
-    <p style="margin-top:0"><span class="badge ${badgeClass(data.summary?.overall_status)}">${fmt(data.summary?.overall_status)}</span></p>
-    ${rows}
-  `;
-}
-
-function prependFeedEntry(event) {
-  const entry = document.createElement("div");
-  entry.className = "feed-entry";
-  entry.innerHTML = `<time>${event.timestamp || new Date().toISOString()}</time><br /><strong>${event.type}</strong><pre>${JSON.stringify(event.payload, null, 2)}</pre>`;
-  if (feedEl.querySelector(".muted")) {
-    feedEl.innerHTML = "";
-  }
-  feedEl.prepend(entry);
-  while (feedEl.children.length > 30) {
-    feedEl.removeChild(feedEl.lastChild);
+  try {
+    const res = await fetch("/analytics/daily-brief");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    renderBrief(await res.json());
+  } catch (err) {
+    const message = `<p class="error-state">Could not load daily brief. Try again shortly.</p>`;
+    weatherEl.innerHTML = message;
+    issEl.innerHTML = message;
+    triviaEl.innerHTML = message;
+    console.error("daily-brief error", err);
   }
 }
 
-function connectSSE() {
-  const source = new EventSource("/events/stream");
+async function refreshSource(source) {
+  setCardRefreshing(source, true);
+  setLoading(document.getElementById(`${source}-content`), `Refreshing ${source}`);
 
-  source.onopen = () => {
-    sseStatus.textContent = "live";
-    sseStatus.className = "badge live";
-  };
+  try {
+    const res = await fetch(`/${source}/refresh`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await loadDailyBrief();
+  } catch (err) {
+    document.getElementById(`${source}-content`).innerHTML =
+      `<p class="error-state">Refresh failed for ${source}. Check upstream availability.</p>`;
+    console.error(`${source} refresh error`, err);
+  } finally {
+    setCardRefreshing(source, false);
+  }
+}
 
-  source.onmessage = (message) => {
-    try {
-      const event = JSON.parse(message.data);
-      prependFeedEntry(event);
-      lastUpdated.textContent = `Last event: ${new Date().toLocaleTimeString()}`;
-    } catch (err) {
-      console.error("SSE parse error", err);
+async function loadAiProviders() {
+  try {
+    const res = await fetch("/analytics/ai-brief/providers");
+    const data = await res.json();
+    const providers = data.providers || [];
+
+    aiProviderSelect.innerHTML = "";
+    if (!providers.length) {
+      aiProviderSelect.innerHTML = `<option value="">No providers configured</option>`;
+      aiProviderSelect.disabled = true;
+      generateAiBtn.disabled = true;
+      aiBriefEl.innerHTML = `
+        <p class="setup-hint">
+          Add <code>OPENAI_API_KEY</code>, <code>ANTHROPIC_API_KEY</code>, or
+          <code>GEMINI_API_KEY</code> / <code>GOOGLE_API_KEY</code> on the server to enable AI summaries.
+        </p>`;
+      return;
     }
-  };
 
-  source.onerror = () => {
-    sseStatus.textContent = "reconnecting";
-    sseStatus.className = "badge warn";
-  };
+    providers.forEach((provider, index) => {
+      const option = document.createElement("option");
+      option.value = provider.id;
+      option.textContent = `${provider.label} (${provider.model})`;
+      if (index === 0) option.selected = true;
+      aiProviderSelect.appendChild(option);
+    });
+
+    aiProviderSelect.disabled = false;
+    generateAiBtn.disabled = false;
+  } catch (err) {
+    aiProviderSelect.innerHTML = `<option value="">Unavailable</option>`;
+    generateAiBtn.disabled = true;
+    console.error("ai providers error", err);
+  }
 }
 
-document.getElementById("refresh-brief").addEventListener("click", loadDailyBrief);
-document.getElementById("refresh-cache").addEventListener("click", loadCacheEfficiency);
+async function generateAiBrief() {
+  const provider = aiProviderSelect.value;
+  if (!provider) return;
 
+  generateAiBtn.disabled = true;
+  aiProviderSelect.disabled = true;
+  aiBriefEl.innerHTML = `
+    <div class="ai-loading">
+      ${skeletonMarkup(4)}
+      <p class="loading-label"><span class="spinner" aria-hidden="true"></span> Generating brief…</p>
+    </div>`;
+
+  try {
+    const res = await fetch(`/analytics/ai-brief?provider=${encodeURIComponent(provider)}`, {
+      method: "POST",
+    });
+    const data = await res.json();
+
+    if (res.status === 503) {
+      aiBriefEl.innerHTML = `
+        <p class="setup-hint">${data.detail}</p>
+        <p class="muted">Set env vars on Render (or locally) and redeploy to enable this feature.</p>`;
+      return;
+    }
+
+    if (!res.ok) {
+      throw new Error(data.detail || `HTTP ${res.status}`);
+    }
+
+    aiBriefEl.innerHTML = `
+      <p class="ai-brief-text">${data.brief}</p>
+      <p class="meta-row">${data.provider} · ${data.model} · ${data.location}</p>`;
+  } catch (err) {
+    aiBriefEl.innerHTML = `<p class="error-state">Could not generate AI brief. ${err.message || "Try again."}</p>`;
+    console.error("ai-brief error", err);
+  } finally {
+    generateAiBtn.disabled = false;
+    aiProviderSelect.disabled = aiProviderSelect.options.length <= 1;
+  }
+}
+
+function getStoredTheme() {
+  return localStorage.getItem("pah-theme");
+}
+
+function getPreferredTheme() {
+  const stored = getStoredTheme();
+  if (stored === "light" || stored === "dark") return stored;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  themeToggle.setAttribute("aria-label", theme === "dark" ? "Switch to light mode" : "Switch to dark mode");
+}
+
+function toggleTheme() {
+  const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  localStorage.setItem("pah-theme", next);
+  applyTheme(next);
+}
+
+document.querySelectorAll(".refresh-btn").forEach((btn) => {
+  btn.addEventListener("click", () => refreshSource(btn.dataset.refresh));
+});
+
+generateAiBtn.addEventListener("click", generateAiBrief);
+themeToggle.addEventListener("click", toggleTheme);
+
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (event) => {
+  if (!getStoredTheme()) {
+    applyTheme(event.matches ? "dark" : "light");
+  }
+});
+
+applyTheme(getPreferredTheme());
 loadDailyBrief();
-loadCacheEfficiency();
-connectSSE();
+loadAiProviders();

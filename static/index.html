@@ -5,51 +5,112 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Personal API Hub</title>
   <link rel="stylesheet" href="/styles.css" />
+  <script>
+    (function () {
+      var stored = localStorage.getItem("pah-theme");
+      var theme = stored || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">◈</span>
+      <span class="logo" aria-hidden="true">◈</span>
       <div>
         <h1>Personal API Hub</h1>
-        <p class="subtitle">Fetch · Cache · Analyze</p>
+        <p class="subtitle">Anekal, Bengaluru · Fetch · Cache · Analyze</p>
       </div>
     </div>
-    <nav class="quick-links">
-      <a href="/docs" target="_blank" rel="noopener">API Docs</a>
-      <a href="/api" target="_blank" rel="noopener">API Index</a>
-      <a href="/health" target="_blank" rel="noopener">Health</a>
-    </nav>
+    <div class="topbar-actions">
+      <button type="button" class="icon-btn" id="theme-toggle" aria-label="Toggle theme">
+        <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
+        <span class="theme-icon theme-icon-moon" aria-hidden="true">☾</span>
+      </button>
+      <nav class="quick-links">
+        <a href="/docs" target="_blank" rel="noopener">API Docs</a>
+        <a href="/api" target="_blank" rel="noopener">API Index</a>
+        <a href="/health" target="_blank" rel="noopener">Health</a>
+      </nav>
+    </div>
   </header>
 
   <main class="grid">
-    <section class="card card-wide" id="daily-brief">
+    <section class="card card-wide card-interactive" id="ai-brief-card">
       <div class="card-header">
-        <h2>Daily Brief</h2>
-        <button type="button" class="btn" id="refresh-brief">Refresh</button>
+        <div class="card-title-group">
+          <span class="card-icon" aria-hidden="true">✦</span>
+          <h2>AI Daily Brief</h2>
+        </div>
+        <div class="card-actions">
+          <label class="sr-only" for="ai-provider">AI provider</label>
+          <select id="ai-provider" class="select" disabled>
+            <option value="">Loading providers…</option>
+          </select>
+          <button type="button" class="btn btn-primary" id="generate-ai-brief" disabled>
+            Generate Brief
+          </button>
+        </div>
       </div>
-      <div class="card-body" id="brief-content">
-        <p class="muted">Loading daily brief…</p>
+      <div class="card-body" id="ai-brief-content">
+        <p class="muted">Pick a provider and generate a friendly summary of today&apos;s cached data.</p>
       </div>
     </section>
 
-    <section class="card" id="cache-efficiency">
+    <section class="card card-interactive" id="weather-card" data-source="weather">
       <div class="card-header">
-        <h2>Cache Efficiency</h2>
-        <button type="button" class="btn" id="refresh-cache">Refresh</button>
+        <div class="card-title-group">
+          <span class="card-icon" aria-hidden="true">☁</span>
+          <h2>Weather</h2>
+        </div>
+        <button type="button" class="btn btn-icon refresh-btn" data-refresh="weather" aria-label="Refresh weather">
+          ↻
+        </button>
       </div>
-      <div class="card-body" id="cache-content">
-        <p class="muted">Loading cache stats…</p>
+      <div class="card-body" id="weather-content">
+        <div class="skeleton-stack" aria-hidden="true">
+          <div class="skeleton skeleton-line wide"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line short"></div>
+        </div>
       </div>
     </section>
 
-    <section class="card card-wide" id="live-feed">
+    <section class="card card-interactive" id="iss-card" data-source="iss">
       <div class="card-header">
-        <h2>Live SSE Feed</h2>
-        <span class="badge" id="sse-status">connecting</span>
+        <div class="card-title-group">
+          <span class="card-icon" aria-hidden="true">🛰</span>
+          <h2>ISS</h2>
+        </div>
+        <button type="button" class="btn btn-icon refresh-btn" data-refresh="iss" aria-label="Refresh ISS">
+          ↻
+        </button>
       </div>
-      <div class="card-body feed" id="feed-content">
-        <p class="muted">Waiting for events…</p>
+      <div class="card-body" id="iss-content">
+        <div class="skeleton-stack" aria-hidden="true">
+          <div class="skeleton skeleton-line wide"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line short"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card card-interactive" id="trivia-card" data-source="trivia">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="card-icon" aria-hidden="true">?</span>
+          <h2>Trivia</h2>
+        </div>
+        <button type="button" class="btn btn-icon refresh-btn" data-refresh="trivia" aria-label="Refresh trivia">
+          ↻
+        </button>
+      </div>
+      <div class="card-body" id="trivia-content">
+        <div class="skeleton-stack" aria-hidden="true">
+          <div class="skeleton skeleton-line wide"></div>
+          <div class="skeleton skeleton-line"></div>
+          <div class="skeleton skeleton-line short"></div>
+        </div>
       </div>
     </section>
   </main>

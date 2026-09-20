@@ -17,8 +17,7 @@
 No API keys required. No external database server required.
 
 **Repository:** https://github.com/deepak-cl/blog-app (planned rename: `personal-api-hub`)
-**Active branch:** `cursor/personal-api-data-hub-0354`
-**Previous PR:** closed by user; work continues on feature branch
+**Active branch:** `main`
 
 ---
 
@@ -31,9 +30,10 @@ No API keys required. No external database server required.
 | Weather feed | Done | Open-Meteo Anekal/Bengaluru, 1h TTL, 7-day forecast |
 | SQLite caching | Done | Auto-created at `data/hub.db`; optional `fetch_duration_ms` |
 | Background scheduler | Done | APScheduler refreshes all sources on TTL intervals |
-| Analytics | Done | summary, trivia, iss, weather, **daily-brief**, **cache-efficiency** |
-| SSE events stream | Done | `GET /events/stream` — health, cache stats, refresh notices |
-| Web dashboard | Done | Dark-theme SPA at `/` (`static/`) |
+| Analytics | Done | summary, trivia, iss, weather, **daily-brief**, **ai-brief**, **cache-efficiency** |
+| AI Daily Brief | Done | Optional OpenAI / Anthropic / Gemini summaries from cached hub data |
+| SSE events stream | Done | `GET /events/stream` — backend only; hidden from dashboard UI |
+| Web dashboard | Done | Light/dark SPA at `/` (`static/`) — weather, ISS, trivia cards + AI brief |
 | Health endpoint | Done | Always HTTP 200; check `status` field |
 | Deploy config | Done | `Dockerfile`, `render.yaml` (Render free tier) |
 | Bruno collection | Done | 22+ requests in `bruno/Personal API Hub/` |
@@ -197,7 +197,10 @@ Each of `/trivia`, `/iss`, `/weather` supports the caching pattern above.
 | `GET /analytics/iss` | Position history + distance traveled (km) |
 | `GET /analytics/weather` | 7-day trends, warmest/coldest/wettest days |
 | `GET /analytics/daily-brief` | Cross-source brief: weather, ISS proximity, trivia question |
-| `GET /analytics/cache-efficiency` | Per-source cache age, TTL, stale flag, hit-friendly status |
+| `GET /analytics/ai-brief/providers` | AI providers with configured API keys |
+| `GET /analytics/ai-brief?provider=` | Generate 2–3 sentence AI summary from cached data |
+| `POST /analytics/ai-brief?provider=` | Same as GET; preferred from dashboard |
+| `GET /analytics/cache-efficiency` | Per-source cache age, TTL, stale flag, hit-friendly status (API only) |
 
 ### Events (SSE)
 | Endpoint | Purpose |
@@ -207,12 +210,33 @@ Each of `/trivia`, `/iss`, `/weather` supports the caching pattern above.
 Interactive docs: http://localhost:8000/docs  
 Dashboard: http://localhost:8000/
 
+### AI Daily Brief (optional)
+
+Summarizes cached weather, ISS, and trivia for **Anekal, Bengaluru** using a configured LLM provider. Uses small models to keep token usage low.
+
+| Provider | Env var(s) | Default model |
+|----------|------------|---------------|
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-3-5-haiku-20241022` |
+| Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | `gemini-2.0-flash` |
+
+If no keys are set, `GET/POST /analytics/ai-brief` returns HTTP **503** with setup instructions. The dashboard shows only providers with keys and a helpful hint when none are configured.
+
+**Render:** add env vars in the Web Service dashboard (see commented keys in `render.yaml`). Never commit or log API keys.
+
+### Dashboard UI
+
+- **Theme:** light/dark toggle (sun/moon) persisted in `localStorage` (`pah-theme`); defaults to `prefers-color-scheme`
+- **Cards:** Weather, ISS, Trivia — skeleton loaders, per-card refresh (`POST /{source}/refresh`), hover transitions
+- **AI Daily Brief:** provider dropdown + Generate button with animated loading state
+- **Hidden from UI (API retained):** cache-efficiency panel, live SSE feed
+
 ---
 
 ## 9. How to run
 
 ```bash
-git checkout cursor/personal-api-data-hub-0354
+git checkout main
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -314,6 +338,7 @@ Follow this checklist when the user requests a new data source, endpoint, or ana
 | 200 | Success (health always 200) |
 | 404 | No cached data on `/{source}/cached` |
 | 502 | Upstream API or validation failure (`detail` field) |
+| 503 | AI brief requested but no provider API key configured |
 | 500 | Unexpected error (`detail` + traceback in terminal) |
 
 ---
@@ -329,6 +354,7 @@ Follow this checklist when the user requests a new data source, endpoint, or ana
 7. Health hardening: auto-init DB, always-200 health, server logging
 8. This lookup file created
 9. Tier 1: background scheduler, daily-brief, cache-efficiency, SSE stream, web UI, Render/Docker deploy
+10. Dashboard revamp: light/dark theme, interactive cards, AI Daily Brief; cache/SSE hidden from UI
 
 ---
 
@@ -337,13 +363,12 @@ Follow this checklist when the user requests a new data source, endpoint, or ana
 - **Owner:** Deepak
 - **Local OS tested:** macOS, Python 3.9
 - **Repo name on GitHub:** still `blog-app`; user may rename to `personal-api-hub`
-- **PR not yet merged to main**
+- **Default location:** Anekal, Bengaluru, Karnataka, India
 
 ---
 
 ## 16. Suggested next steps (not yet built)
 
-- Merge feature branch to `main`
 - Rename GitHub repo to `personal-api-hub`
 - Additional data sources (user may request)
 - Environment-based config via `.env` (not requested yet)
