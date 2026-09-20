@@ -8,6 +8,8 @@ import httpx
 
 from app.config import DEFAULT_WEATHER_LOCATION
 from app.services.analytics_service import AnalyticsService
+from app.services.weather_service import WeatherService
+from app.utils.geo import format_coords_label
 
 PROVIDER_CONFIG: dict[str, dict[str, Any]] = {
     "openai": {
@@ -55,13 +57,14 @@ class AIBriefService:
             if self._resolve_api_key(provider_id)
         ]
 
-    def _build_prompt(self, brief: dict) -> str:
+    def _build_prompt(self, brief: dict, *, location_label: str | None = None) -> str:
         weather = brief.get("weather") or {}
         iss = brief.get("iss") or {}
         trivia = brief.get("trivia") or {}
+        resolved_location = weather.get("location") or location_label or DEFAULT_WEATHER_LOCATION
 
         facts: list[str] = [
-            f"Location: {weather.get('location') or DEFAULT_WEATHER_LOCATION}",
+            f"Location: {resolved_location}",
         ]
 
         if weather:
@@ -101,7 +104,7 @@ class AIBriefService:
 
         return (
             f"Write a friendly 2-3 sentence daily brief for someone in "
-            f"{DEFAULT_WEATHER_LOCATION}. Use only these facts:\n\n"
+            f"{resolved_location}. Use only these facts:\n\n"
             + "\n".join(f"- {line}" for line in facts)
             + "\n\nKeep it warm, concise, and practical. Do not invent details."
         )
@@ -166,7 +169,12 @@ class AIBriefService:
             data = response.json()
             return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-    async def generate(self, provider: str | None = None) -> dict[str, Any]:
+    async def generate(
+        self,
+        provider: str | None = None,
+        *,
+        coords: tuple[float, float] | None = None,
+    ) -> dict[str, Any]:
         configured = self.configured_providers()
         if not configured:
             raise AIBriefNotConfiguredError(
@@ -188,8 +196,25 @@ class AIBriefService:
                 f"Set one of: {', '.join(PROVIDER_CONFIG[provider_id]['env_vars'])}."
             )
 
-        brief = self._analytics.daily_brief()
-        prompt = self._build_prompt(brief)
+        brief_kwargs: dict = {}
+        location_label = DEFAULT_WEATHER_LOCATION
+        if coords is not None:
+            ref_lat, ref_lng = coords
+            location_label = format_coords_label(ref_lat, ref_lng)
+            brief_kwargs = {
+                "reference_lat": ref_lat,
+                "reference_lng": ref_lng,
+                "reference_label": location_label,
+            }
+            weather_service = WeatherService(
+                latitude=ref_lat,
+                longitude=ref_lng,
+                location_label=location_label,
+            )
+            await weather_service.get_or_refresh(force=False)
+
+        brief = self._analytics.daily_brief(**brief_kwargs)
+        prompt = self._build_prompt(brief, location_label=location_label)
         model = PROVIDER_CONFIG[provider_id]["model"]
 
         if provider_id == "openai":
@@ -202,7 +227,7 @@ class AIBriefService:
         return {
             "provider": provider_id,
             "model": model,
-            "location": DEFAULT_WEATHER_LOCATION,
+            "location": location_label,
             "brief": text,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }

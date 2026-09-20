@@ -471,6 +471,53 @@ html[data-theme="dark"] .theme-icon-moon {
   }
 }
 
+.hidden {
+  display: none !important;
+}
+
+.geo-banner {
+  margin: 0 1.5rem 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.geo-banner.is-notice {
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
+}
+
+.geo-modal {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.5rem;
+  max-width: 28rem;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-hover);
+}
+
+.geo-modal::backdrop {
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.geo-modal h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+.geo-modal p {
+  margin: 0 0 1rem;
+  color: var(--muted);
+}
+
+.geo-modal form {
+  display: flex;
+  justify-content: flex-end;
+}
+
 @media (max-width: 720px) {
   .topbar,
   .footer,

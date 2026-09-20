@@ -27,7 +27,9 @@ No API keys required. No external database server required.
 |------|--------|-------|
 | Trivia feed | Done | Open Trivia DB, 10 MCQ, 1h TTL |
 | ISS location | Done | Open Notify, 5min TTL, position history |
-| Weather feed | Done | Open-Meteo Anekal/Bengaluru, 1h TTL, 7-day forecast |
+| Weather feed | Done | Open-Meteo + fallback chain; default Anekal/Bengaluru; optional `?lat=&lng=` (India only) |
+| Geo-based dashboard | Done | Browser geolocation → India bounds → weather/ISS/daily-brief; fallback to Anekal |
+| Prometheus metrics | Done | `GET /metrics` — request counts, cache hit/miss, last fetch timestamps (admin only) |
 | SQLite caching | Done | Auto-created at `data/hub.db`; optional `fetch_duration_ms` |
 | Background scheduler | Done | APScheduler refreshes all sources on TTL intervals |
 | Analytics | Done | summary, trivia, iss, weather, **daily-brief**, **news-brief**, **ai-brief**, **cache-efficiency** |
@@ -90,7 +92,8 @@ routers services analytics
 | Services | `app/services/` | Fetch upstream APIs, cache logic, scheduler, event bus |
 | Analytics | `app/services/analytics_service.py` | Aggregations over cached data |
 | Database | `app/db/database.py` | SQLite schema, cache CRUD, ISS position history |
-| Utils | `app/utils/geo.py` | Haversine distance for ISS analytics |
+| Utils | `app/utils/geo.py` | India bounds, Haversine, dynamic Open-Meteo/wttr URLs |
+| Metrics | `app/metrics.py` | Prometheus text format + request middleware |
 | Static UI | `static/` | Dashboard HTML/CSS/JS served at `/` |
 
 ---
@@ -149,7 +152,7 @@ rm -f data/hub.db
 |--------|-----------|--------------|-----|
 | trivia | `TRIVIA_API_URL` | opentdb.com | 3600s (1h) |
 | iss | `ISS_API_URL` | api.open-notify.org (HTTP) | 300s (5m) |
-| weather | `WEATHER_API_URL` | open-meteo.com (Anekal/Bengaluru), **NWS fallback (US only)** | 7200s (2h) |
+| weather | `WEATHER_LATITUDE` / `WEATHER_LONGITUDE` | open-meteo.com (dynamic URL), wttr/IMD/OpenWeather/NWS fallbacks | 7200s (2h) |
 | news | `NEWS_RSS_FEEDS` | BBC World, NPR World, Al Jazeera, Guardian World | 3600s (1h) |
 | ai_dev | `AI_DEV_RSS_FEEDS` | Hugging Face, OpenAI, Google AI, arXiv cs.AI, Anthropic | 7200s (2h) |
 | entertainment | `ENTERTAINMENT_RSS_FEEDS` | BBC Entertainment, Variety, THR, NPR Arts, Guardian Culture | 3600s (1h) |
@@ -197,6 +200,19 @@ When Open-Meteo is rate-limited **with no cache**, the service tries [api.weathe
 
 ### Data sources
 Each of `/trivia`, `/iss`, `/weather`, `/news`, `/ai-dev`, `/entertainment` supports the caching pattern above.
+
+**India-only geo query params** (optional on `/weather`, `/iss`, `/analytics/daily-brief`, `/analytics/ai-brief`):
+- `lat` and `lng` must be supplied together
+- Valid range: lat `6.5–35.5`, lng `68–97.5` (approximate India bounding box)
+- Outside India → HTTP **403** with `{ "error": "outside_india", "message": "..." }`
+- Dashboard requests browser geolocation on load; denied/unavailable → Anekal default with UI notice
+
+### Observability (admin — not linked from dashboard)
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /metrics` | Prometheus text exposition: `http_requests_total`, `cache_hits_total`, `cache_misses_total`, `cache_last_fetch_timestamp_seconds`, `hub_health_status` |
+| `GET /health` | JSON health + cache stats |
+| `GET /analytics/cache-efficiency` | Programmatic cache age / TTL monitoring |
 
 ### Analytics
 | Endpoint | Purpose |
@@ -346,6 +362,7 @@ Follow this checklist when the user requests a new data source, endpoint, or ana
 | Code | Meaning |
 |------|---------|
 | 200 | Success (health always 200) |
+| 403 | Coordinates outside India on geo-enabled endpoints (`error`: `outside_india`) |
 | 404 | No cached data on `/{source}/cached` |
 | 502 | Upstream API or validation failure (`detail` field) |
 | 503 | AI brief requested but no provider API key configured |
@@ -366,6 +383,7 @@ Follow this checklist when the user requests a new data source, endpoint, or ana
 9. Tier 1: background scheduler, daily-brief, cache-efficiency, SSE stream, web UI, Render/Docker deploy
 10. Dashboard revamp: light/dark theme, interactive cards, AI Daily Brief; cache/SSE hidden from UI
 11. RSS headlines: world news, AI developments, entertainment + dashboard cards + news-brief analytics
+12. Geo-based weather/ISS (India bounding box), browser geolocation on dashboard, `/metrics` Prometheus endpoint
 
 ---
 

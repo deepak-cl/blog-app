@@ -14,9 +14,9 @@ from app.config import (
     IMD_CITY_ID,
     NWS_USER_AGENT,
     OPENWEATHER_API_KEY,
-    WEATHER_API_URL,
     WEATHER_LATITUDE,
     WEATHER_LONGITUDE,
+    WEATHER_TIMEZONE,
 )
 from app.db.database import (
     get_connection,
@@ -24,7 +24,14 @@ from app.db.database import (
     is_cache_valid,
     save_cache_entry,
 )
-from app.utils.geo import is_india_coordinates, is_us_coordinates, nws_points_url
+from app.metrics import record_cache_hit, record_cache_miss
+from app.utils.geo import (
+    is_india_coordinates,
+    is_us_coordinates,
+    nws_points_url,
+    open_meteo_forecast_url,
+    wttr_json_url,
+)
 from app.utils.http_client import get_json
 from app.utils.rate_limit import mark_upstream_fetch, should_skip_upstream
 
@@ -174,6 +181,17 @@ def _imd_forecast_days(record: dict) -> tuple[list[str], list[float | None], lis
 class WeatherService:
     source = "weather"
 
+    def __init__(
+        self,
+        *,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        location_label: str | None = None,
+    ) -> None:
+        self._latitude = latitude if latitude is not None else WEATHER_LATITUDE
+        self._longitude = longitude if longitude is not None else WEATHER_LONGITUDE
+        self._location_label = location_label
+
     def _weather_payload(
         self,
         *,
@@ -185,16 +203,21 @@ class WeatherService:
         location: str | None = None,
     ) -> dict:
         return {
-            "location": location or DEFAULT_WEATHER_LOCATION,
-            "latitude": latitude if latitude is not None else WEATHER_LATITUDE,
-            "longitude": longitude if longitude is not None else WEATHER_LONGITUDE,
+            "location": location or self._location_label or DEFAULT_WEATHER_LOCATION,
+            "latitude": latitude if latitude is not None else self._latitude,
+            "longitude": longitude if longitude is not None else self._longitude,
             "upstream": upstream,
             "current": current,
             "forecast_7d": forecast_7d,
         }
 
     async def fetch_remote(self) -> dict:
-        payload = await get_json(WEATHER_API_URL, retries=OPEN_METEO_RETRIES)
+        url = open_meteo_forecast_url(
+            self._latitude,
+            self._longitude,
+            timezone=WEATHER_TIMEZONE,
+        )
+        payload = await get_json(url, retries=OPEN_METEO_RETRIES)
         current = payload.get("current", {})
         daily = payload.get("daily", {})
         weather_code = current.get("weather_code")
@@ -228,7 +251,7 @@ class WeatherService:
         urls = [
             (
                 "https://api.imd.gov.in/api/v1/cityforecastloc"
-                f"?lat={WEATHER_LATITUDE}&lon={WEATHER_LONGITUDE}"
+                f"?lat={self._latitude}&lon={self._longitude}"
             ),
             f"https://api.imd.gov.in/api/v1/cityforecastloc?id={IMD_CITY_ID}",
             f"https://api.imd.gov.in/api/v1/cityforecast?id={IMD_CITY_ID}",
@@ -255,8 +278,8 @@ class WeatherService:
         return self._weather_payload(
             upstream="imd",
             location=location,
-            latitude=_parse_float(record.get("Latitude")) or WEATHER_LATITUDE,
-            longitude=_parse_float(record.get("Longitude")) or WEATHER_LONGITUDE,
+            latitude=_parse_float(record.get("Latitude")) or self._latitude,
+            longitude=_parse_float(record.get("Longitude")) or self._longitude,
             current={
                 "temperature_c": _parse_float(record.get("Today_Max_temp"))
                 or _parse_float(record.get("Todays_Forecast_Max_Temp")),
@@ -281,11 +304,11 @@ class WeatherService:
 
         current_url = (
             "https://api.openweathermap.org/data/2.5/weather"
-            f"?lat={WEATHER_LATITUDE}&lon={WEATHER_LONGITUDE}&appid={api_key}&units=metric"
+            f"?lat={self._latitude}&lon={self._longitude}&appid={api_key}&units=metric"
         )
         forecast_url = (
             "https://api.openweathermap.org/data/2.5/forecast"
-            f"?lat={WEATHER_LATITUDE}&lon={WEATHER_LONGITUDE}&appid={api_key}&units=metric"
+            f"?lat={self._latitude}&lon={self._longitude}&appid={api_key}&units=metric"
         )
 
         current_payload = await get_json(current_url, retries=2)
@@ -335,7 +358,7 @@ class WeatherService:
         )
 
     async def fetch_remote_wttr(self) -> dict:
-        url = f"https://wttr.in/{WEATHER_LATITUDE},{WEATHER_LONGITUDE}?format=j1"
+        url = wttr_json_url(self._latitude, self._longitude)
         payload = await get_json(url, headers=WTTR_HEADERS, retries=2)
 
         current = (payload.get("current_condition") or [{}])[0]
@@ -361,8 +384,8 @@ class WeatherService:
         return self._weather_payload(
             upstream="wttr",
             location=location,
-            latitude=_parse_float(nearest.get("latitude")) or WEATHER_LATITUDE,
-            longitude=_parse_float(nearest.get("longitude")) or WEATHER_LONGITUDE,
+            latitude=_parse_float(nearest.get("latitude")) or self._latitude,
+            longitude=_parse_float(nearest.get("longitude")) or self._longitude,
             current={
                 "temperature_c": _parse_float(current.get("temp_C")),
                 "humidity_percent": _parse_float(current.get("humidity")),
@@ -381,7 +404,7 @@ class WeatherService:
 
     async def fetch_remote_nws(self) -> dict:
         points = await get_json(
-            nws_points_url(WEATHER_LATITUDE, WEATHER_LONGITUDE),
+            nws_points_url(self._latitude, self._longitude),
             headers=NWS_HEADERS,
             retries=2,
         )
@@ -433,13 +456,13 @@ class WeatherService:
     def _provider_chain(self) -> list[tuple[str, str]]:
         chain: list[tuple[str, str]] = [("open-meteo", "fetch_remote")]
 
-        if _imd_api_key() and is_india_coordinates(WEATHER_LATITUDE, WEATHER_LONGITUDE):
+        if _imd_api_key() and is_india_coordinates(self._latitude, self._longitude):
             chain.append(("imd", "fetch_remote_imd"))
 
         if _openweather_api_key():
             chain.append(("openweather", "fetch_remote_openweather"))
 
-        if is_us_coordinates(WEATHER_LATITUDE, WEATHER_LONGITUDE):
+        if is_us_coordinates(self._latitude, self._longitude):
             chain.append(("nws", "fetch_remote_nws"))
 
         chain.append(("wttr", "fetch_remote_wttr"))
@@ -478,21 +501,41 @@ class WeatherService:
             )
         raise UpstreamRateLimitedError(self.source, detail)
 
+    def _cache_matches_coords(self, cached: dict | None) -> bool:
+        if cached is None:
+            return False
+        data = cached.get("data") or {}
+        cached_lat = data.get("latitude")
+        cached_lng = data.get("longitude")
+        if cached_lat is None or cached_lng is None:
+            return True
+        return (
+            abs(float(cached_lat) - self._latitude) < 0.05
+            and abs(float(cached_lng) - self._longitude) < 0.05
+        )
+
     async def get_or_refresh(self, force: bool = False) -> dict:
         with get_connection() as conn:
             cached = get_latest_cache_entry(conn, self.source)
-            if not force and is_cache_valid(cached):
+            cache_ok = self._cache_matches_coords(cached)
+            if not force and cache_ok and is_cache_valid(cached):
+                record_cache_hit(self.source)
                 return {
                     **cached,
                     "from_cache": True,
                 }
 
-            if should_skip_upstream(self.source, force=force, has_cache=cached is not None):
+            if (
+                cache_ok
+                and should_skip_upstream(self.source, force=force, has_cache=cached is not None)
+            ):
                 logger.info("Skipping weather upstream fetch (min interval); serving cache")
+                record_cache_hit(self.source)
                 return self._stale_response(cached)
 
+        record_cache_miss(self.source)
         start = time.monotonic()
-        data = await self._fetch_with_fallbacks(cached)
+        data = await self._fetch_with_fallbacks(cached if cache_ok else None)
         mark_upstream_fetch(self.source)
 
         fetch_duration_ms = int((time.monotonic() - start) * 1000)

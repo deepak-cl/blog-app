@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.db.database import init_db
+from app.metrics import MetricsMiddleware
 from app.routers import (
     ai_dev,
     analytics,
@@ -17,6 +18,7 @@ from app.routers import (
     events,
     health,
     iss,
+    metrics,
     news,
     trivia,
     weather,
@@ -24,6 +26,7 @@ from app.routers import (
 from app.services.scheduler import refresh_scheduler
 from app.services.weather_service import UpstreamRateLimitedError
 from app.utils.errors import friendly_http_error
+from app.utils.geo import OUTSIDE_INDIA_MESSAGE, OutsideIndiaError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,6 +54,21 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+app.add_middleware(MetricsMiddleware)
+
+
+@app.exception_handler(OutsideIndiaError)
+async def outside_india_handler(_: Request, exc: OutsideIndiaError):
+    return JSONResponse(
+        status_code=403,
+        content={
+            "error": "outside_india",
+            "message": OUTSIDE_INDIA_MESSAGE,
+            "latitude": exc.lat,
+            "longitude": exc.lng,
+        },
+    )
 
 
 @app.exception_handler(UpstreamRateLimitedError)
@@ -99,6 +117,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         },
     )
 
+app.include_router(metrics.router)
 app.include_router(health.router)
 app.include_router(trivia.router)
 app.include_router(iss.router)
@@ -130,6 +149,7 @@ def api_index():
             "ai_brief": "/analytics/ai-brief",
             "ai_brief_providers": "/analytics/ai-brief/providers",
             "cache_efficiency": "/analytics/cache-efficiency",
+            "metrics": "/metrics",
             "events_stream": "/events/stream",
         },
     }

@@ -6,23 +6,108 @@ const aiProviderSelect = document.getElementById("ai-provider");
 const generateAiBtn = document.getElementById("generate-ai-brief");
 const lastUpdated = document.getElementById("last-updated");
 const themeToggle = document.getElementById("theme-toggle");
+const locationSubtitle = document.getElementById("location-subtitle");
+const geoBanner = document.getElementById("geo-banner");
+const geoBannerText = document.getElementById("geo-banner-text");
+const outsideIndiaModal = document.getElementById("outside-india-modal");
 
 const HEADLINE_SOURCES = new Set(["news", "ai-dev", "entertainment"]);
 
+const DEFAULT_LAT = 12.7081;
+const DEFAULT_LNG = 77.6953;
+const DEFAULT_LABEL = "Anekal, Bengaluru";
+const INDIA_LAT_MIN = 6.5;
+const INDIA_LAT_MAX = 35.5;
+const INDIA_LNG_MIN = 68.0;
+const INDIA_LNG_MAX = 97.5;
+
 let briefCache = null;
+let userLocation = {
+  lat: DEFAULT_LAT,
+  lng: DEFAULT_LNG,
+  label: DEFAULT_LABEL,
+  source: "default",
+  outsideIndia: false,
+};
 
 function fmt(value, fallback = "—") {
   return value === null || value === undefined ? fallback : value;
 }
 
+function isIndiaCoordinates(lat, lng) {
+  return (
+    lat >= INDIA_LAT_MIN &&
+    lat <= INDIA_LAT_MAX &&
+    lng >= INDIA_LNG_MIN &&
+    lng <= INDIA_LNG_MAX
+  );
+}
+
+function geoQueryString() {
+  if (userLocation.outsideIndia) return "";
+  return `lat=${encodeURIComponent(userLocation.lat)}&lng=${encodeURIComponent(userLocation.lng)}`;
+}
+
+function geoQueryPrefix() {
+  const qs = geoQueryString();
+  return qs ? `?${qs}` : "";
+}
+
+function setGeoBanner(message, { notice = false } = {}) {
+  if (!message) {
+    geoBanner.classList.add("hidden");
+    geoBannerText.textContent = "";
+    return;
+  }
+  geoBanner.classList.remove("hidden");
+  geoBanner.classList.toggle("is-notice", notice);
+  geoBannerText.textContent = message;
+}
+
+function updateLocationSubtitle() {
+  if (userLocation.outsideIndia) {
+    locationSubtitle.textContent = "India-only weather & ISS · Fetch · Cache · Analyze";
+    return;
+  }
+  locationSubtitle.textContent = `${userLocation.label} · Fetch · Cache · Analyze`;
+}
+
+function showOutsideIndiaModal() {
+  if (typeof outsideIndiaModal.showModal === "function") {
+    outsideIndiaModal.showModal();
+  } else {
+    window.alert(
+      "Geographic location is not covered. This service currently supports locations within India only."
+    );
+  }
+}
+
+function setOutsideIndiaState() {
+  userLocation.outsideIndia = true;
+  updateLocationSubtitle();
+  weatherEl.innerHTML =
+    `<p class="empty-state">Weather is unavailable outside India.</p>`;
+  issEl.innerHTML =
+    `<p class="empty-state">ISS distance is unavailable outside India.</p>`;
+}
+
 async function parseApiError(res) {
   try {
     const data = await res.json();
+    if (data.error === "outside_india") {
+      return data.message;
+    }
     if (data.detail) {
       return data.hint ? `${data.detail} ${data.hint}` : data.detail;
     }
+    if (data.message) {
+      return data.message;
+    }
   } catch (_) {
     /* response may not be JSON */
+  }
+  if (res.status === 403) {
+    return "This service currently supports locations within India only.";
   }
   if (res.status === 429) {
     return "Weather service is temporarily rate-limited. Cached data is shown when available.";
@@ -95,7 +180,7 @@ function renderHeadlines(headlines) {
 
 function renderWeather(weather) {
   if (!weather) {
-    weatherEl.innerHTML = `<p class="empty-state">No weather cached yet. Hit refresh to fetch Anekal/Bengaluru forecast.</p>`;
+    weatherEl.innerHTML = `<p class="empty-state">No weather cached yet. Hit refresh to fetch forecast for your location.</p>`;
     return;
   }
 
@@ -165,16 +250,24 @@ async function loadHeadlineCard(source, refresh = false) {
 }
 
 async function loadDailyBrief() {
+  if (userLocation.outsideIndia) {
+    setOutsideIndiaState();
+    return;
+  }
+
   setLoading(weatherEl, "Loading weather");
   setLoading(issEl, "Loading ISS");
   setLoading(triviaEl, "Loading trivia");
 
   try {
-    const res = await fetch("/analytics/daily-brief");
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const res = await fetch(`/analytics/daily-brief?${geoQueryString()}`);
+    if (!res.ok) {
+      const message = await parseApiError(res);
+      throw new Error(message);
+    }
     renderBrief(await res.json());
   } catch (err) {
-    const message = `<p class="error-state">Could not load daily brief. Try again shortly.</p>`;
+    const message = `<p class="error-state">Could not load daily brief. ${err.message || "Try again shortly."}</p>`;
     weatherEl.innerHTML = message;
     issEl.innerHTML = message;
     triviaEl.innerHTML = message;
@@ -183,11 +276,17 @@ async function loadDailyBrief() {
 }
 
 async function refreshSource(source) {
+  if (userLocation.outsideIndia && (source === "weather" || source === "iss")) {
+    setOutsideIndiaState();
+    return;
+  }
+
   setCardRefreshing(source, true);
   setLoading(document.getElementById(`${source}-content`), `Refreshing ${source}`);
 
   try {
-    const res = await fetch(`/${source}/refresh`, { method: "POST" });
+    const geoSuffix = HEADLINE_SOURCES.has(source) ? "" : geoQueryPrefix();
+    const res = await fetch(`/${source}/refresh${geoSuffix}`, { method: "POST" });
     if (!res.ok) {
       const message = await parseApiError(res);
       throw new Error(message);
@@ -248,6 +347,11 @@ async function loadAiProviders() {
 }
 
 async function generateAiBrief() {
+  if (userLocation.outsideIndia) {
+    showOutsideIndiaModal();
+    return;
+  }
+
   const provider = aiProviderSelect.value;
   if (!provider) return;
 
@@ -260,9 +364,10 @@ async function generateAiBrief() {
     </div>`;
 
   try {
-    const res = await fetch(`/analytics/ai-brief?provider=${encodeURIComponent(provider)}`, {
-      method: "POST",
-    });
+    const res = await fetch(
+      `/analytics/ai-brief?provider=${encodeURIComponent(provider)}&${geoQueryString()}`,
+      { method: "POST" }
+    );
     const data = await res.json();
 
     if (res.status === 503) {
@@ -273,7 +378,7 @@ async function generateAiBrief() {
     }
 
     if (!res.ok) {
-      throw new Error(data.detail || `Request failed (HTTP ${res.status}). Try again shortly.`);
+      throw new Error(data.message || data.detail || `Request failed (HTTP ${res.status}). Try again shortly.`);
     }
 
     aiBriefEl.innerHTML = `
@@ -309,6 +414,78 @@ function toggleTheme() {
   applyTheme(next);
 }
 
+function requestUserLocation() {
+  setGeoBanner(
+    "We use your approximate location to show weather and ISS distance for where you are in India. Your coordinates are sent only to this hub — not stored permanently.",
+    { notice: true }
+  );
+
+  if (!navigator.geolocation) {
+    userLocation = {
+      lat: DEFAULT_LAT,
+      lng: DEFAULT_LNG,
+      label: DEFAULT_LABEL,
+      source: "default",
+      outsideIndia: false,
+    };
+    setGeoBanner(
+      "Geolocation is not supported in this browser. Showing weather and ISS for Anekal, Bengaluru.",
+      { notice: true }
+    );
+    updateLocationSubtitle();
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        if (!isIndiaCoordinates(latitude, longitude)) {
+          userLocation = {
+            lat: latitude,
+            lng: longitude,
+            label: "Outside India",
+            source: "geolocation",
+            outsideIndia: true,
+          };
+          setGeoBanner("");
+          updateLocationSubtitle();
+          showOutsideIndiaModal();
+          resolve();
+          return;
+        }
+
+        userLocation = {
+          lat: latitude,
+          lng: longitude,
+          label: `Your location (${latitude.toFixed(2)}°, ${longitude.toFixed(2)}°)`,
+          source: "geolocation",
+          outsideIndia: false,
+        };
+        setGeoBanner("");
+        updateLocationSubtitle();
+        resolve();
+      },
+      () => {
+        userLocation = {
+          lat: DEFAULT_LAT,
+          lng: DEFAULT_LNG,
+          label: DEFAULT_LABEL,
+          source: "default",
+          outsideIndia: false,
+        };
+        setGeoBanner(
+          "Location access was denied or unavailable. Showing weather and ISS for Anekal, Bengaluru.",
+          { notice: true }
+        );
+        updateLocationSubtitle();
+        resolve();
+      },
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 }
+    );
+  });
+}
+
 document.querySelectorAll(".refresh-btn").forEach((btn) => {
   btn.addEventListener("click", () => refreshSource(btn.dataset.refresh));
 });
@@ -323,8 +500,20 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (ev
 });
 
 applyTheme(getPreferredTheme());
-loadDailyBrief();
-loadAiProviders();
-loadHeadlineCard("news");
-loadHeadlineCard("ai-dev");
-loadHeadlineCard("entertainment");
+
+(async function bootstrap() {
+  await requestUserLocation();
+  if (userLocation.outsideIndia) {
+    setOutsideIndiaState();
+    await loadAiProviders();
+    loadHeadlineCard("news");
+    loadHeadlineCard("ai-dev");
+    loadHeadlineCard("entertainment");
+    return;
+  }
+  loadDailyBrief();
+  loadAiProviders();
+  loadHeadlineCard("news");
+  loadHeadlineCard("ai-dev");
+  loadHeadlineCard("entertainment");
+})();

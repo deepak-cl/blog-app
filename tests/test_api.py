@@ -426,6 +426,161 @@ async def test_ai_brief_missing_provider_key(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_outside_india_weather_rejected(client):
+    response = await client.get("/weather?lat=40.7128&lng=-74.0060")
+    assert response.status_code == 403
+    body = response.json()
+    assert body["error"] == "outside_india"
+    assert "India" in body["message"]
+
+
+@pytest.mark.asyncio
+async def test_outside_india_iss_rejected(client):
+    response = await client.get("/iss?lat=51.5074&lng=-0.1278")
+    assert response.status_code == 403
+    assert response.json()["error"] == "outside_india"
+
+
+@pytest.mark.asyncio
+async def test_india_bounds_validation(client):
+    from app.utils.geo import is_india_coordinates, require_india_coordinates, OutsideIndiaError
+
+    assert is_india_coordinates(12.7081, 77.6953) is True
+    assert is_india_coordinates(28.6139, 77.2090) is True
+    assert is_india_coordinates(6.4, 80.0) is False
+    assert is_india_coordinates(12.0, 67.0) is False
+    assert is_india_coordinates(40.7128, -74.0060) is False
+
+    require_india_coordinates(12.7081, 77.6953)
+    with pytest.raises(OutsideIndiaError):
+        require_india_coordinates(40.7128, -74.0060)
+
+
+@pytest.mark.asyncio
+async def test_weather_with_custom_india_coords(client, monkeypatch):
+    from app.services.weather_service import WeatherService
+
+    custom_payload = {
+        "location": "Your location (19.08°, 72.88°)",
+        "latitude": 19.076,
+        "longitude": 72.8777,
+        "upstream": "open-meteo",
+        "current": {
+            "temperature_c": 30.0,
+            "humidity_percent": 72.0,
+            "wind_speed_kmh": 10.0,
+            "weather_code": 1,
+            "condition": "Mainly clear",
+            "observed_at": "2026-09-20T10:00",
+        },
+        "forecast_7d": {
+            "dates": ["2026-09-20"],
+            "temperature_max_c": [32.0],
+            "temperature_min_c": [26.0],
+            "precipitation_mm": [0.0],
+        },
+    }
+
+    async def mock_fetch(_self):
+        return custom_payload
+
+    monkeypatch.setattr(WeatherService, "fetch_remote", mock_fetch)
+
+    response = await client.get("/weather?refresh=true&lat=19.076&lng=72.8777")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"]["latitude"] == 19.076
+    assert body["data"]["longitude"] == 72.8777
+    assert "Your location" in body["data"]["location"]
+
+
+@pytest.mark.asyncio
+async def test_iss_with_custom_reference_coords(client, monkeypatch):
+    from app.services.iss_service import ISSService
+
+    iss_payload = {
+        "latitude": 10.0,
+        "longitude": 60.0,
+        "timestamp": 1_700_000_000,
+        "message": "success",
+        "provider": "test",
+    }
+
+    monkeypatch.setattr(
+        ISSService,
+        "fetch_remote",
+        AsyncMock(return_value=iss_payload),
+    )
+
+    response = await client.get("/iss?refresh=true&lat=12.7081&lng=77.6953")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"]["latitude"] == 10.0
+    assert "distance_km" in body
+    assert body["reference_point"]["latitude"] == 12.7081
+    assert "Your location" in body["reference_point"]["label"]
+
+
+@pytest.mark.asyncio
+async def test_daily_brief_with_custom_coords(client, monkeypatch):
+    from app.services.iss_service import ISSService
+    from app.services.weather_service import WeatherService
+
+    weather_payload = {
+        "location": "Your location (13.08°, 80.27°)",
+        "latitude": 13.0827,
+        "longitude": 80.2707,
+        "upstream": "open-meteo",
+        "current": {
+            "temperature_c": 31.0,
+            "humidity_percent": 70.0,
+            "wind_speed_kmh": 8.0,
+            "weather_code": 2,
+            "condition": "Partly cloudy",
+            "observed_at": "2026-09-20T10:00",
+        },
+        "forecast_7d": {
+            "dates": ["2026-09-20"],
+            "temperature_max_c": [33.0],
+            "temperature_min_c": [27.0],
+            "precipitation_mm": [0.0],
+        },
+    }
+
+    iss_payload = {
+        "latitude": 5.0,
+        "longitude": 75.0,
+        "timestamp": 1_700_000_000,
+        "message": "success",
+        "provider": "test",
+    }
+
+    monkeypatch.setattr(WeatherService, "fetch_remote", AsyncMock(return_value=weather_payload))
+    monkeypatch.setattr(ISSService, "fetch_remote", AsyncMock(return_value=iss_payload))
+    await client.post("/trivia/refresh")
+    await client.post("/iss/refresh")
+
+    response = await client.get("/analytics/daily-brief?lat=13.0827&lng=80.2707")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["iss"]["reference_point"]["latitude"] == 13.0827
+    assert "Your location" in body["iss"]["reference_point"]["label"]
+    assert body["weather"] is not None
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint(client):
+    await client.get("/health")
+    response = await client.get("/metrics")
+    assert response.status_code == 200
+    assert "text/plain" in response.headers.get("content-type", "")
+    body = response.text
+    assert "http_requests_total" in body
+    assert "hub_health_status" in body
+    assert "cache_ttl_seconds" in body
+
+
+@pytest.mark.asyncio
 async def test_api_index(client):
     response = await client.get("/api")
     assert response.status_code == 200

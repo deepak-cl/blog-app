@@ -4,8 +4,11 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services.ai_brief_service import AIBriefNotConfiguredError, AIBriefService
+from app.services.weather_service import WeatherService
 from app.utils.errors import friendly_http_error
 from app.services.analytics_service import AnalyticsService
+from app.utils.geo import format_coords_label
+from app.utils.geo_params import optional_india_coords
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 service = AnalyticsService()
@@ -37,17 +40,32 @@ def weather_analytics():
 
 
 @router.get("/daily-brief")
-def daily_brief(
+async def daily_brief(
+    lat: float | None = None,
+    lng: float | None = None,
     reference_lat: float | None = None,
     reference_lng: float | None = None,
     near_threshold_km: float | None = None,
 ):
     """Cross-source daily brief: weather, ISS proximity, and a trivia question."""
+    coords = optional_india_coords(lat, lng)
     kwargs: dict = {}
-    if reference_lat is not None:
-        kwargs["reference_lat"] = reference_lat
-    if reference_lng is not None:
-        kwargs["reference_lng"] = reference_lng
+    if coords is not None:
+        ref_lat, ref_lng = coords
+        kwargs["reference_lat"] = ref_lat
+        kwargs["reference_lng"] = ref_lng
+        kwargs["reference_label"] = format_coords_label(ref_lat, ref_lng)
+        weather_service = WeatherService(
+            latitude=ref_lat,
+            longitude=ref_lng,
+            location_label=kwargs["reference_label"],
+        )
+        await weather_service.get_or_refresh(force=False)
+    else:
+        if reference_lat is not None:
+            kwargs["reference_lat"] = reference_lat
+        if reference_lng is not None:
+            kwargs["reference_lng"] = reference_lng
     if near_threshold_km is not None:
         kwargs["near_threshold_km"] = near_threshold_km
     return service.daily_brief(**kwargs)
@@ -72,20 +90,34 @@ def ai_brief_providers():
 
 
 @router.get("/ai-brief")
-async def ai_brief_get(provider: str | None = Query(default=None)):
+async def ai_brief_get(
+    provider: str | None = Query(default=None),
+    lat: float | None = None,
+    lng: float | None = None,
+):
     """Generate a short AI daily brief from cached hub data."""
-    return await _generate_ai_brief(provider)
+    return await _generate_ai_brief(provider, lat=lat, lng=lng)
 
 
 @router.post("/ai-brief")
-async def ai_brief_post(provider: str | None = Query(default=None)):
+async def ai_brief_post(
+    provider: str | None = Query(default=None),
+    lat: float | None = None,
+    lng: float | None = None,
+):
     """Generate a short AI daily brief from cached hub data."""
-    return await _generate_ai_brief(provider)
+    return await _generate_ai_brief(provider, lat=lat, lng=lng)
 
 
-async def _generate_ai_brief(provider: str | None) -> dict:
+async def _generate_ai_brief(
+    provider: str | None,
+    *,
+    lat: float | None = None,
+    lng: float | None = None,
+) -> dict:
+    coords = optional_india_coords(lat, lng)
     try:
-        return await ai_brief_service.generate(provider=provider)
+        return await ai_brief_service.generate(provider=provider, coords=coords)
     except AIBriefNotConfiguredError as exc:
         raise HTTPException(
             status_code=503,

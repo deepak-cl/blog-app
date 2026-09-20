@@ -225,6 +225,7 @@ class AnalyticsService:
         *,
         reference_lat: float = ISS_REFERENCE_LAT,
         reference_lng: float = ISS_REFERENCE_LNG,
+        reference_label: str = ISS_REFERENCE_LABEL,
         near_threshold_km: float = ISS_NEAR_THRESHOLD_KM,
     ) -> dict:
         now = datetime.now(timezone.utc)
@@ -282,7 +283,7 @@ class AnalyticsService:
                 "reference_point": {
                     "latitude": reference_lat,
                     "longitude": reference_lng,
-                    "label": ISS_REFERENCE_LABEL,
+                    "label": reference_label,
                 },
                 "distance_km": round(distance_km, 2),
                 "near_reference": distance_km <= near_threshold_km,
