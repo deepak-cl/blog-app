@@ -102,6 +102,8 @@ Add two RSS-backed data sources to Personal API Hub: **World News** (`news`) and
 
 Endpoints: `GET/POST /entertainment`, `/entertainment/cached`. Scheduler stagger: +600s.
 
+Dashboard cards use the same interactive card pattern as Weather/ISS/Trivia (theme-aware, skeleton loading, ↻ refresh).
+
 ## Out of scope
 
 - Celebrity/gossip tabloids
