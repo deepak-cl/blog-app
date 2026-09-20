@@ -22,7 +22,7 @@ PROVIDER_CONFIG: dict[str, dict[str, Any]] = {
     },
     "gemini": {
         "env_vars": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
-        "model": "gemini-2.0-flash",
+        "model": "gemini-2.5-flash-lite",
         "label": "Gemini",
     },
 }

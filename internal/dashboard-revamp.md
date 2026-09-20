@@ -32,7 +32,7 @@ Overhauled the Personal API Hub dashboard (`static/`) while keeping backend endp
 |----------|----------|
 | `OPENAI_API_KEY` | OpenAI (`gpt-4o-mini`) |
 | `ANTHROPIC_API_KEY` | Anthropic (`claude-3-5-haiku-20241022`) |
-| `GEMINI_API_KEY` or `GOOGLE_API_KEY` | Gemini (`gemini-2.0-flash`) |
+| `GEMINI_API_KEY` or `GOOGLE_API_KEY` | Gemini (`gemini-2.5-flash-lite`) |
 
 - No keys → HTTP **503** with setup message; UI shows hint
 - Keys are never logged or committed

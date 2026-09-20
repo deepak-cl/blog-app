@@ -218,7 +218,7 @@ Summarizes cached weather, ISS, and trivia for **Anekal, Bengaluru** using a con
 |----------|------------|---------------|
 | OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` |
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-3-5-haiku-20241022` |
-| Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | `gemini-2.0-flash` |
+| Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | `gemini-2.5-flash-lite` |
 
 If no keys are set, `GET/POST /analytics/ai-brief` returns HTTP **503** with setup instructions. The dashboard shows only providers with keys and a helpful hint when none are configured.
 
