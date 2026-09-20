@@ -15,7 +15,8 @@ CACHE_TTL = {
 
 # External API endpoints
 TRIVIA_API_URL = "https://opentdb.com/api.php?amount=10&type=multiple"
-ISS_API_URL = "http://api.open-notify.org/iss-now.json"
+ISS_API_URL = "https://api.wheretheiss.at/v1/satellites/25544"
+ISS_API_URL_FALLBACK = "http://api.open-notify.org/iss-now.json"
 WEATHER_API_URL = (
     "https://api.open-meteo.com/v1/forecast"
     "?latitude=40.7128&longitude=-74.0060"

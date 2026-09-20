@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -24,7 +25,7 @@ class RefreshScheduler:
         self._iss = ISSService()
         self._weather = WeatherService()
 
-    async def refresh_source(self, source: str) -> None:
+    async def refresh_source(self, source: str) -> dict[str, Any]:
         start = time.monotonic()
         try:
             if source == "trivia":
@@ -51,6 +52,7 @@ class RefreshScheduler:
                     "fetched_at": result.get("fetched_at"),
                 },
             )
+            return {"source": source, "status": "ok", "duration_ms": duration_ms}
         except Exception as exc:
             duration_ms = int((time.monotonic() - start) * 1000)
             logger.exception(
@@ -66,12 +68,21 @@ class RefreshScheduler:
                     "error": str(exc),
                 },
             )
+            return {"source": source, "status": "error", "error": str(exc), "duration_ms": duration_ms}
+
+    async def warm_all_sources(self) -> list[dict[str, Any]]:
+        """Fetch all sources immediately (startup or manual warm)."""
+        results: list[dict[str, Any]] = []
+        for source in SOURCES:
+            results.append(await self.refresh_source(source))
+        return results
 
     def start(self) -> None:
         if not SCHEDULER_ENABLED:
             logger.info("Background refresh scheduler disabled")
             return
 
+        now = datetime.now(timezone.utc)
         for source in SOURCES:
             ttl = CACHE_TTL[source]
             self._scheduler.add_job(
@@ -83,6 +94,7 @@ class RefreshScheduler:
                 replace_existing=True,
                 max_instances=1,
                 coalesce=True,
+                next_run_time=now,
             )
             logger.info(
                 "Scheduled background refresh source=%s interval_seconds=%s",
