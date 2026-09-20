@@ -7,6 +7,8 @@ const generateAiBtn = document.getElementById("generate-ai-brief");
 const lastUpdated = document.getElementById("last-updated");
 const themeToggle = document.getElementById("theme-toggle");
 
+const HEADLINE_SOURCES = new Set(["news", "ai-dev", "entertainment"]);
+
 let briefCache = null;
 
 function fmt(value, fallback = "—") {
@@ -50,6 +52,45 @@ function setCardRefreshing(source, refreshing) {
   const btn = document.querySelector(`[data-refresh="${source}"]`);
   if (card) card.classList.toggle("is-refreshing", refreshing);
   if (btn) btn.disabled = refreshing;
+}
+
+function timeAgo(iso) {
+  if (!iso) return "—";
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return "—";
+  const seconds = Math.floor((Date.now() - then.getTime()) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function renderHeadlines(headlines) {
+  if (!headlines?.length) {
+    return `<p class="empty-state">No headlines cached yet. Hit refresh to fetch the latest.</p>`;
+  }
+
+  return `
+    <ul class="headline-list">
+      ${headlines
+        .slice(0, 5)
+        .map(
+          (item) => `
+        <li class="headline-item">
+          <a href="${item.url}" target="_blank" rel="noopener noreferrer">${item.title}</a>
+          <div class="headline-meta">
+            <span>${fmt(item.source)}</span>
+            <span>${timeAgo(item.published_at)}</span>
+          </div>
+        </li>
+      `
+        )
+        .join("")}
+    </ul>
+  `;
 }
 
 function renderWeather(weather) {
@@ -104,6 +145,25 @@ function renderBrief(data) {
   lastUpdated.textContent = `Updated ${new Date(data.generated_at).toLocaleTimeString()}`;
 }
 
+async function loadHeadlineCard(source, refresh = false) {
+  const container = document.getElementById(`${source}-content`);
+  setLoading(container, `Loading ${source}`);
+
+  const url = refresh ? `/${source}?refresh=true` : `/${source}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const message = await parseApiError(res);
+      throw new Error(message);
+    }
+    const payload = await res.json();
+    container.innerHTML = renderHeadlines(payload.data?.headlines || []);
+  } catch (err) {
+    container.innerHTML = `<p class="error-state">Could not load headlines. ${err.message || "Try again shortly."}</p>`;
+    console.error(`${source} load error`, err);
+  }
+}
+
 async function loadDailyBrief() {
   setLoading(weatherEl, "Loading weather");
   setLoading(issEl, "Loading ISS");
@@ -132,7 +192,15 @@ async function refreshSource(source) {
       const message = await parseApiError(res);
       throw new Error(message);
     }
-    await loadDailyBrief();
+
+    if (HEADLINE_SOURCES.has(source)) {
+      const payload = await res.json();
+      document.getElementById(`${source}-content`).innerHTML = renderHeadlines(
+        payload.data?.headlines || []
+      );
+    } else {
+      await loadDailyBrief();
+    }
   } catch (err) {
     const message = err.message || "Check upstream availability.";
     document.getElementById(`${source}-content`).innerHTML =
@@ -257,3 +325,6 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (ev
 applyTheme(getPreferredTheme());
 loadDailyBrief();
 loadAiProviders();
+loadHeadlineCard("news");
+loadHeadlineCard("ai-dev");
+loadHeadlineCard("entertainment");

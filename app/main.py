@@ -10,7 +10,17 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.db.database import init_db
-from app.routers import analytics, events, health, iss, trivia, weather
+from app.routers import (
+    ai_dev,
+    analytics,
+    entertainment,
+    events,
+    health,
+    iss,
+    news,
+    trivia,
+    weather,
+)
 from app.services.scheduler import refresh_scheduler
 from app.services.weather_service import UpstreamRateLimitedError
 from app.utils.errors import friendly_http_error
@@ -35,8 +45,8 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="Personal API Hub",
     description=(
-        "Aggregates trivia, ISS location, and weather from external APIs "
-        "with SQLite caching and custom analytics."
+        "Aggregates trivia, ISS location, weather, world news, and AI developments "
+        "from external APIs and RSS feeds with SQLite caching and custom analytics."
     ),
     version="1.0.0",
     lifespan=lifespan,
@@ -93,6 +103,9 @@ app.include_router(health.router)
 app.include_router(trivia.router)
 app.include_router(iss.router)
 app.include_router(weather.router)
+app.include_router(news.router)
+app.include_router(ai_dev.router)
+app.include_router(entertainment.router)
 app.include_router(analytics.router)
 app.include_router(events.router)
 
@@ -108,7 +121,11 @@ def api_index():
             "trivia": "/trivia",
             "iss": "/iss",
             "weather": "/weather",
+            "news": "/news",
+            "ai_dev": "/ai-dev",
+            "entertainment": "/entertainment",
             "analytics": "/analytics/summary",
+            "news_brief": "/analytics/news-brief",
             "daily_brief": "/analytics/daily-brief",
             "ai_brief": "/analytics/ai-brief",
             "ai_brief_providers": "/analytics/ai-brief/providers",

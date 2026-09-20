@@ -433,3 +433,94 @@ async def test_api_index(client):
     assert body["name"] == "Personal API Hub"
     assert "daily_brief" in body["endpoints"]
     assert "ai_brief" in body["endpoints"]
+    assert "news" in body["endpoints"]
+    assert "entertainment" in body["endpoints"]
+
+
+MOCK_HEADLINES = {
+    "headline_count": 2,
+    "feed_count": 2,
+    "headlines": [
+        {
+            "title": "Sample headline one",
+            "summary": "Summary text",
+            "source": "Test Source",
+            "url": "https://example.com/one",
+            "published_at": "2026-09-20T10:00:00+00:00",
+        },
+        {
+            "title": "Sample headline two",
+            "summary": "More summary",
+            "source": "Other Source",
+            "url": "https://example.com/two",
+            "published_at": "2026-09-20T09:00:00+00:00",
+        },
+    ],
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path,service_path",
+    [
+        ("/news", "app.services.news_service.NewsService"),
+        ("/ai-dev", "app.services.ai_dev_service.AiDevService"),
+        ("/entertainment", "app.services.entertainment_service.EntertainmentService"),
+    ],
+)
+async def test_rss_source_fetch_and_cache(client, monkeypatch, path, service_path):
+    module_path, class_name = service_path.rsplit(".", 1)
+    module = __import__(module_path, fromlist=[class_name])
+    service_cls = getattr(module, class_name)
+
+    monkeypatch.setattr(
+        service_cls,
+        "fetch_remote",
+        AsyncMock(return_value=MOCK_HEADLINES),
+    )
+
+    first = await client.post(f"{path}/refresh")
+    assert first.status_code == 200
+    body = first.json()
+    assert body["from_cache"] is False
+    assert body["data"]["headline_count"] == 2
+    assert body["data"]["headlines"][0]["title"] == "Sample headline one"
+
+    second = await client.get(path)
+    assert second.status_code == 200
+    assert second.json()["from_cache"] is True
+
+    cached_only = await client.get(f"{path}/cached")
+    assert cached_only.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_news_brief_and_daily_brief_headlines(client, monkeypatch):
+    from app.services.ai_dev_service import AiDevService
+    from app.services.entertainment_service import EntertainmentService
+    from app.services.news_service import NewsService
+
+    for service_cls in (NewsService, AiDevService, EntertainmentService):
+        monkeypatch.setattr(
+            service_cls,
+            "fetch_remote",
+            AsyncMock(return_value=MOCK_HEADLINES),
+        )
+
+    await client.post("/news/refresh")
+    await client.post("/ai-dev/refresh")
+    await client.post("/entertainment/refresh")
+
+    news_brief = await client.get("/analytics/news-brief")
+    assert news_brief.status_code == 200
+    brief_body = news_brief.json()
+    assert brief_body["news"]["top_headlines"][0]["title"] == "Sample headline one"
+    assert brief_body["ai_dev"]["top_headlines"][0]["source"] == "Test Source"
+    assert brief_body["entertainment"]["headline_count"] == 2
+
+    daily = await client.get("/analytics/daily-brief")
+    assert daily.status_code == 200
+    daily_body = daily.json()
+    assert daily_body["news"] is not None
+    assert daily_body["ai_dev"] is not None
+    assert daily_body["entertainment"] is not None

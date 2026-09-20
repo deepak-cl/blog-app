@@ -59,6 +59,12 @@ def cache_efficiency():
     return service.cache_efficiency()
 
 
+@router.get("/news-brief")
+def news_brief(limit: int = 5):
+    """Top headlines from world news, AI developments, and entertainment."""
+    return service.news_brief(limit=limit)
+
+
 @router.get("/ai-brief/providers")
 def ai_brief_providers():
     """List AI providers that have API keys configured on the server."""

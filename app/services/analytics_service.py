@@ -21,6 +21,27 @@ from app.db.database import (
 from app.utils.geo import haversine_km
 
 
+def _headline_snapshot(entry: dict | None, *, limit: int = 3) -> dict | None:
+    if entry is None:
+        return None
+    headlines = entry["data"].get("headlines", [])[:limit]
+    if not headlines:
+        return None
+    return {
+        "cached_at": entry["fetched_at"],
+        "headline_count": entry["data"].get("headline_count", len(headlines)),
+        "top_headlines": [
+            {
+                "title": row.get("title"),
+                "source": row.get("source"),
+                "url": row.get("url"),
+                "published_at": row.get("published_at"),
+            }
+            for row in headlines
+        ],
+    }
+
+
 class AnalyticsService:
     def summary(self) -> dict:
         with get_connection() as conn:
@@ -210,12 +231,18 @@ class AnalyticsService:
         weather_snapshot: dict | None = None
         iss_snapshot: dict | None = None
         trivia_snapshot: dict | None = None
+        news_snapshot: dict | None = None
+        ai_dev_snapshot: dict | None = None
+        entertainment_snapshot: dict | None = None
         notes: list[str] = []
 
         with get_connection() as conn:
             weather_entry = get_latest_cache_entry(conn, "weather")
             iss_entry = get_latest_cache_entry(conn, "iss")
             trivia_entry = get_latest_cache_entry(conn, "trivia")
+            news_entry = get_latest_cache_entry(conn, "news")
+            ai_dev_entry = get_latest_cache_entry(conn, "ai_dev")
+            entertainment_entry = get_latest_cache_entry(conn, "entertainment")
 
         if weather_entry is None:
             notes.append("No weather data cached.")
@@ -277,11 +304,52 @@ class AnalyticsService:
                     "cached_at": trivia_entry["fetched_at"],
                 }
 
+        news_snapshot = _headline_snapshot(news_entry, limit=3)
+        if news_entry is None:
+            notes.append("No world news cached.")
+        ai_dev_snapshot = _headline_snapshot(ai_dev_entry, limit=3)
+        if ai_dev_entry is None:
+            notes.append("No AI developments cached.")
+        entertainment_snapshot = _headline_snapshot(entertainment_entry, limit=3)
+        if entertainment_entry is None:
+            notes.append("No entertainment headlines cached.")
+
         return {
             "generated_at": now.isoformat(),
             "weather": weather_snapshot,
             "iss": iss_snapshot,
             "trivia": trivia_snapshot,
+            "news": news_snapshot,
+            "ai_dev": ai_dev_snapshot,
+            "entertainment": entertainment_snapshot,
+            "notes": notes,
+        }
+
+    def news_brief(self, limit: int = 5) -> dict:
+        now = datetime.now(timezone.utc)
+        notes: list[str] = []
+
+        with get_connection() as conn:
+            news_entry = get_latest_cache_entry(conn, "news")
+            ai_dev_entry = get_latest_cache_entry(conn, "ai_dev")
+            entertainment_entry = get_latest_cache_entry(conn, "entertainment")
+
+        news = _headline_snapshot(news_entry, limit=limit)
+        ai_dev = _headline_snapshot(ai_dev_entry, limit=limit)
+        entertainment = _headline_snapshot(entertainment_entry, limit=limit)
+
+        if news is None:
+            notes.append("No world news cached.")
+        if ai_dev is None:
+            notes.append("No AI developments cached.")
+        if entertainment is None:
+            notes.append("No entertainment headlines cached.")
+
+        return {
+            "generated_at": now.isoformat(),
+            "news": news,
+            "ai_dev": ai_dev,
+            "entertainment": entertainment,
             "notes": notes,
         }
 

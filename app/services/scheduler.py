@@ -10,14 +10,24 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import CACHE_TTL, SCHEDULER_ENABLED
 from app.services.event_bus import event_bus
+from app.services.ai_dev_service import AiDevService
+from app.services.entertainment_service import EntertainmentService
 from app.services.iss_service import ISSService
+from app.services.news_service import NewsService
 from app.services.trivia_service import TriviaService
 from app.services.weather_service import WeatherService
 
 logger = logging.getLogger(__name__)
 
-SOURCES = ("weather", "iss", "trivia")
-STARTUP_STAGGER_SECONDS = {"weather": 30, "iss": 120, "trivia": 240}
+SOURCES = ("weather", "iss", "trivia", "news", "ai_dev", "entertainment")
+STARTUP_STAGGER_SECONDS = {
+    "weather": 30,
+    "iss": 120,
+    "trivia": 240,
+    "news": 360,
+    "ai_dev": 480,
+    "entertainment": 600,
+}
 WARM_STAGGER_SECONDS = 45
 
 
@@ -27,6 +37,9 @@ class RefreshScheduler:
         self._trivia = TriviaService()
         self._iss = ISSService()
         self._weather = WeatherService()
+        self._news = NewsService()
+        self._ai_dev = AiDevService()
+        self._entertainment = EntertainmentService()
 
     async def refresh_source(self, source: str) -> dict[str, Any]:
         start = time.monotonic()
@@ -37,6 +50,12 @@ class RefreshScheduler:
                 result = await self._iss.get_or_refresh(force=True)
             elif source == "weather":
                 result = await self._weather.get_or_refresh(force=True)
+            elif source == "news":
+                result = await self._news.get_or_refresh(force=True)
+            elif source == "ai_dev":
+                result = await self._ai_dev.get_or_refresh(force=True)
+            elif source == "entertainment":
+                result = await self._entertainment.get_or_refresh(force=True)
             else:
                 raise ValueError(f"Unknown source: {source}")
 

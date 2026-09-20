@@ -9,7 +9,7 @@
 
 **Personal API Hub** is a FastAPI + SQLite application that:
 
-1. Fetches data from three public external APIs (trivia, ISS location, weather)
+1. Fetches data from public external APIs (trivia, ISS location, weather) and RSS feeds (world news, AI developments, entertainment)
 2. Caches responses in a local SQLite database with per-source TTL
 3. Serves REST endpoints for cached/fresh data
 4. Exposes custom analytics endpoints derived from cached data
@@ -30,10 +30,13 @@ No API keys required. No external database server required.
 | Weather feed | Done | Open-Meteo Anekal/Bengaluru, 1h TTL, 7-day forecast |
 | SQLite caching | Done | Auto-created at `data/hub.db`; optional `fetch_duration_ms` |
 | Background scheduler | Done | APScheduler refreshes all sources on TTL intervals |
-| Analytics | Done | summary, trivia, iss, weather, **daily-brief**, **ai-brief**, **cache-efficiency** |
+| Analytics | Done | summary, trivia, iss, weather, **daily-brief**, **news-brief**, **ai-brief**, **cache-efficiency** |
 | AI Daily Brief | Done | Optional OpenAI / Anthropic / Gemini summaries from cached hub data |
+| World news | Done | RSS aggregation (BBC, NPR, Al Jazeera, Guardian), 1h TTL |
+| AI developments | Done | RSS (Hugging Face, OpenAI, Google AI, arXiv cs.AI, Anthropic), 2h TTL |
+| Entertainment headlines | Done | RSS (BBC, Variety, THR, NPR Arts, Guardian Culture), 1h TTL |
 | SSE events stream | Done | `GET /events/stream` — backend only; hidden from dashboard UI |
-| Web dashboard | Done | Light/dark SPA at `/` (`static/`) — weather, ISS, trivia cards + AI brief |
+| Web dashboard | Done | Light/dark SPA at `/` — weather, ISS, trivia, headline cards + AI brief |
 | Health endpoint | Done | Always HTTP 200; check `status` field |
 | Deploy config | Done | `Dockerfile`, `render.yaml` (Render free tier) |
 | Bruno collection | Done | 22+ requests in `bruno/Personal API Hub/` |
@@ -51,6 +54,7 @@ No API keys required. No external database server required.
 | Web framework | FastAPI 0.115 |
 | Server | Uvicorn |
 | HTTP client | httpx (async) |
+| RSS parsing | feedparser |
 | Database | SQLite (file-based) |
 | Tests | pytest + pytest-asyncio |
 | API testing | Bruno (.bru collection) |
@@ -73,7 +77,7 @@ routers services analytics
         |
    SQLite (data/hub.db)
         |
-   External APIs (trivia, ISS, weather)
+   External APIs + RSS feeds (trivia, ISS, weather, news, ai_dev, entertainment)
 ```
 
 ### Layer responsibilities
@@ -99,8 +103,8 @@ routers services analytics
 │   ├── main.py
 │   ├── config.py
 │   ├── db/database.py
-│   ├── routers/          # health, trivia, iss, weather, analytics
-│   ├── services/         # trivia_service, iss_service, weather_service, analytics_service
+│   ├── routers/          # health, trivia, iss, weather, news, ai-dev, entertainment, analytics
+│   ├── services/         # *_service modules + rss_aggregator
 │   └── utils/geo.py
 ├── static/                   # Web dashboard (served at /)
 ├── bruno/Personal API Hub/   # API test collection
@@ -131,7 +135,7 @@ rm -f data/hub.db
 
 **cache_entries**
 - `id`, `source`, `data` (JSON text), `fetched_at`, `expires_at`, `fetch_duration_ms` (optional)
-- Sources: `trivia`, `iss`, `weather`
+- Sources: `trivia`, `iss`, `weather`, `news`, `ai_dev`, `entertainment`
 
 **iss_positions**
 - `id`, `latitude`, `longitude`, `fetched_at`
@@ -145,9 +149,14 @@ rm -f data/hub.db
 |--------|-----------|--------------|-----|
 | trivia | `TRIVIA_API_URL` | opentdb.com | 3600s (1h) |
 | iss | `ISS_API_URL` | api.open-notify.org (HTTP) | 300s (5m) |
-| weather | `WEATHER_API_URL` | open-meteo.com (Anekal/Bengaluru), **NWS fallback (US only)** | 3600s (1h) |
+| weather | `WEATHER_API_URL` | open-meteo.com (Anekal/Bengaluru), **NWS fallback (US only)** | 7200s (2h) |
+| news | `NEWS_RSS_FEEDS` | BBC World, NPR World, Al Jazeera, Guardian World | 3600s (1h) |
+| ai_dev | `AI_DEV_RSS_FEEDS` | Hugging Face, OpenAI, Google AI, arXiv cs.AI, Anthropic | 7200s (2h) |
+| entertainment | `ENTERTAINMENT_RSS_FEEDS` | BBC Entertainment, Variety, THR, NPR Arts, Guardian Culture | 3600s (1h) |
 
 Weather responses include an `upstream` field on cached data: `"open-meteo"` or `"nws"`.
+
+RSS sources store normalized headlines: `title`, `summary`, `source`, `url`, `published_at`.
 
 ### Upstream rate limits
 
@@ -160,7 +169,7 @@ Open-Meteo limits requests **per IP**. On shared hosts (e.g. Render), many apps 
 | Retry with backoff on 429/503 | `app/utils/http_client.py` |
 | Serve stale cache when 429 and cache exists | `app/services/weather_service.py` |
 | **NWS fallback when Open-Meteo fails, cache empty, and coords are US** | `app/services/weather_service.py` |
-| Stagger scheduler warm-up (weather +30s, iss +120s, trivia +240s) | `app/services/scheduler.py` |
+| Stagger scheduler warm-up (weather +30s … entertainment +600s) | `app/services/scheduler.py` |
 
 Default location: **Anekal, Bengaluru, Karnataka, India** (`12.7081, 77.6953`, timezone `Asia/Kolkata`).
 
@@ -187,7 +196,7 @@ When Open-Meteo is rate-limited **with no cache**, the service tries [api.weathe
 - `GET /health` — always HTTP 200; `status`: `healthy` or `degraded`
 
 ### Data sources
-Each of `/trivia`, `/iss`, `/weather` supports the caching pattern above.
+Each of `/trivia`, `/iss`, `/weather`, `/news`, `/ai-dev`, `/entertainment` supports the caching pattern above.
 
 ### Analytics
 | Endpoint | Purpose |
@@ -196,7 +205,8 @@ Each of `/trivia`, `/iss`, `/weather` supports the caching pattern above.
 | `GET /analytics/trivia` | Difficulty/category/type breakdown |
 | `GET /analytics/iss` | Position history + distance traveled (km) |
 | `GET /analytics/weather` | 7-day trends, warmest/coldest/wettest days |
-| `GET /analytics/daily-brief` | Cross-source brief: weather, ISS proximity, trivia question |
+| `GET /analytics/daily-brief` | Cross-source brief: weather, ISS, trivia, top headlines |
+| `GET /analytics/news-brief` | Top headlines from news, AI dev, and entertainment |
 | `GET /analytics/ai-brief/providers` | AI providers with configured API keys |
 | `GET /analytics/ai-brief?provider=` | Generate 2–3 sentence AI summary from cached data |
 | `POST /analytics/ai-brief?provider=` | Same as GET; preferred from dashboard |
@@ -355,6 +365,7 @@ Follow this checklist when the user requests a new data source, endpoint, or ana
 8. This lookup file created
 9. Tier 1: background scheduler, daily-brief, cache-efficiency, SSE stream, web UI, Render/Docker deploy
 10. Dashboard revamp: light/dark theme, interactive cards, AI Daily Brief; cache/SSE hidden from UI
+11. RSS headlines: world news, AI developments, entertainment + dashboard cards + news-brief analytics
 
 ---
 

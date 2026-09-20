@@ -403,6 +403,41 @@ html[data-theme="dark"] .theme-icon-moon {
   animation: spin 0.8s linear infinite;
 }
 
+.headline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.headline-item {
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+}
+
+.headline-item:last-child {
+  border-bottom: none;
+}
+
+.headline-item a {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.headline-item a:hover {
+  color: var(--accent);
+}
+
+.headline-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 .footer {
   color: var(--muted);
   font-size: 0.82rem;

@@ -12,7 +12,39 @@ CACHE_TTL = {
     "iss": 300,
     # Longer TTL reduces Open-Meteo pressure on shared Render IPs.
     "weather": 7200,
+    "news": 3600,
+    "ai_dev": 7200,
+    "entertainment": 3600,
 }
+
+# RSS feeds — world news (no celebrity/gossip sources)
+NEWS_RSS_FEEDS = [
+    {"name": "BBC World", "url": "https://feeds.bbci.co.uk/news/world/rss.xml"},
+    {"name": "NPR World", "url": "https://feeds.npr.org/1004/rss.xml"},
+    {"name": "Al Jazeera", "url": "https://www.aljazeera.com/xml/rss/all.xml"},
+    {"name": "Guardian World", "url": "https://www.theguardian.com/world/rss"},
+]
+
+# RSS feeds — AI / ML developments
+AI_DEV_RSS_FEEDS = [
+    {"name": "Hugging Face", "url": "https://huggingface.co/blog/feed.xml"},
+    {"name": "OpenAI", "url": "https://openai.com/blog/rss.xml"},
+    {"name": "Google AI", "url": "https://blog.google/technology/ai/rss/"},
+    {"name": "arXiv cs.AI", "url": "https://rss.arxiv.org/rss/cs.AI"},
+    {"name": "Anthropic", "url": "https://www.anthropic.com/news/rss"},
+]
+
+# RSS feeds — entertainment industry (movies, music, TV; no gossip tabloids)
+ENTERTAINMENT_RSS_FEEDS = [
+    {
+        "name": "BBC Entertainment",
+        "url": "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml",
+    },
+    {"name": "Variety", "url": "https://variety.com/feed/"},
+    {"name": "Hollywood Reporter", "url": "https://www.hollywoodreporter.com/feed/"},
+    {"name": "NPR Arts", "url": "https://feeds.npr.org/1008/rss.xml"},
+    {"name": "Guardian Culture", "url": "https://www.theguardian.com/culture/rss"},
+]
 
 # External API endpoints
 TRIVIA_API_URL = "https://opentdb.com/api.php?amount=10&type=multiple"
