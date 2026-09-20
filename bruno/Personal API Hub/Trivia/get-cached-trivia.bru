@@ -1,0 +1,11 @@
+meta {
+  name: Get Cached Trivia
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/trivia/cached
+  body: none
+  auth: inherit
+}

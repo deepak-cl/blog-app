@@ -1,0 +1,11 @@
+meta {
+  name: Get Cached Weather
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/weather/cached
+  body: none
+  auth: inherit
+}
