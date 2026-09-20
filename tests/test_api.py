@@ -143,7 +143,7 @@ async def test_cache_efficiency(client):
 
     weather = next(row for row in body["sources"] if row["source"] == "weather")
     assert weather["entry_count"] >= 1
-    assert weather["ttl_seconds"] == 1800
+    assert weather["ttl_seconds"] == 3600
     assert weather["hit_friendly_status"] in {
         "hit_friendly",
         "stale_serves_fallback",

@@ -10,7 +10,7 @@ DATABASE_PATH = BASE_DIR / "data" / "hub.db"
 CACHE_TTL = {
     "trivia": 3600,
     "iss": 300,
-    "weather": 1800,
+    "weather": 3600,
 }
 
 # External API endpoints

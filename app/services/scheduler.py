@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -15,7 +16,9 @@ from app.services.weather_service import WeatherService
 
 logger = logging.getLogger(__name__)
 
-SOURCES = ("trivia", "iss", "weather")
+SOURCES = ("weather", "iss", "trivia")
+STARTUP_STAGGER_SECONDS = {"weather": 30, "iss": 120, "trivia": 240}
+WARM_STAGGER_SECONDS = 45
 
 
 class RefreshScheduler:
@@ -71,9 +74,11 @@ class RefreshScheduler:
             return {"source": source, "status": "error", "error": str(exc), "duration_ms": duration_ms}
 
     async def warm_all_sources(self) -> list[dict[str, Any]]:
-        """Fetch all sources immediately (startup or manual warm)."""
+        """Fetch sources sequentially with delay to avoid upstream 429 bursts."""
         results: list[dict[str, Any]] = []
-        for source in SOURCES:
+        for index, source in enumerate(SOURCES):
+            if index > 0:
+                await asyncio.sleep(WARM_STAGGER_SECONDS)
             results.append(await self.refresh_source(source))
         return results
 
@@ -85,6 +90,7 @@ class RefreshScheduler:
         now = datetime.now(timezone.utc)
         for source in SOURCES:
             ttl = CACHE_TTL[source]
+            stagger = STARTUP_STAGGER_SECONDS.get(source, 0)
             self._scheduler.add_job(
                 self.refresh_source,
                 trigger="interval",
@@ -94,7 +100,7 @@ class RefreshScheduler:
                 replace_existing=True,
                 max_instances=1,
                 coalesce=True,
-                next_run_time=now,
+                next_run_time=now + timedelta(seconds=stagger),
             )
             logger.info(
                 "Scheduled background refresh source=%s interval_seconds=%s",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 
 import httpx
@@ -11,7 +12,10 @@ from app.db.database import (
     is_cache_valid,
     save_cache_entry,
 )
+from app.utils.http_client import get_json
+from app.utils.rate_limit import mark_upstream_fetch, should_skip_upstream
 
+logger = logging.getLogger(__name__)
 
 WEATHER_CODE_LABELS = {
     0: "Clear sky",
@@ -36,15 +40,17 @@ WEATHER_CODE_LABELS = {
 }
 
 
+class UpstreamRateLimitedError(Exception):
+    def __init__(self, source: str, detail: str):
+        self.source = source
+        super().__init__(detail)
+
+
 class WeatherService:
     source = "weather"
 
     async def fetch_remote(self) -> dict:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(WEATHER_API_URL)
-            response.raise_for_status()
-            payload = response.json()
-
+        payload = await get_json(WEATHER_API_URL)
         current = payload.get("current", {})
         daily = payload.get("daily", {})
         weather_code = current.get("weather_code")
@@ -69,6 +75,14 @@ class WeatherService:
             },
         }
 
+    def _stale_response(self, cached: dict) -> dict:
+        return {
+            **cached,
+            "from_cache": True,
+            "stale": True,
+            "upstream_rate_limited": True,
+        }
+
     async def get_or_refresh(self, force: bool = False) -> dict:
         with get_connection() as conn:
             cached = get_latest_cache_entry(conn, self.source)
@@ -78,8 +92,23 @@ class WeatherService:
                     "from_cache": True,
                 }
 
+            if should_skip_upstream(self.source, force=force, has_cache=cached is not None):
+                logger.info("Skipping weather upstream fetch (min interval); serving cache")
+                return self._stale_response(cached)
+
         start = time.monotonic()
-        data = await self.fetch_remote()
+        try:
+            data = await self.fetch_remote()
+            mark_upstream_fetch(self.source)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429 and cached is not None:
+                logger.warning("Open-Meteo rate limited; returning stale weather cache")
+                return self._stale_response(cached)
+            raise UpstreamRateLimitedError(
+                self.source,
+                "Open-Meteo rate limit reached. Cached data served when available; "
+                "retry later or increase refresh interval.",
+            ) from exc
         fetch_duration_ms = int((time.monotonic() - start) * 1000)
 
         with get_connection() as conn:

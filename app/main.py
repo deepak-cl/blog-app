@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.db.database import init_db
 from app.routers import analytics, events, health, iss, trivia, weather
 from app.services.scheduler import refresh_scheduler
+from app.services.weather_service import UpstreamRateLimitedError
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,6 +40,18 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(UpstreamRateLimitedError)
+async def rate_limit_handler(_: Request, exc: UpstreamRateLimitedError):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "detail": str(exc),
+            "source": exc.source,
+            "hint": "Open-Meteo limits requests per IP. Wait a few minutes or use cached data.",
+        },
+    )
 
 
 @app.exception_handler(httpx.HTTPError)

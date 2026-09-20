@@ -145,7 +145,21 @@ rm -f data/hub.db
 |--------|-----------|--------------|-----|
 | trivia | `TRIVIA_API_URL` | opentdb.com | 3600s (1h) |
 | iss | `ISS_API_URL` | api.open-notify.org (HTTP) | 300s (5m) |
-| weather | `WEATHER_API_URL` | open-meteo.com (NYC) | 1800s (30m) |
+| weather | `WEATHER_API_URL` | open-meteo.com (NYC) | 3600s (1h) |
+
+### Upstream rate limits
+
+Open-Meteo limits requests **per IP**. On shared hosts (e.g. Render), many apps share one IP, so bursts can return HTTP 429.
+
+| Mitigation | Where |
+|------------|-------|
+| Cache TTL 1h for weather | `app/config.py` |
+| Min 15 min between forced weather fetches | `app/utils/rate_limit.py` |
+| Retry with backoff on 429/503 | `app/utils/http_client.py` |
+| Serve stale cache when 429 and cache exists | `app/services/weather_service.py` |
+| Stagger scheduler warm-up (weather +30s, iss +120s, trivia +240s) | `app/services/scheduler.py` |
+
+When rate-limited with no cache, the API returns HTTP **429** (not 502) with a hint to retry later.
 
 ### Caching behavior (all sources)
 
